@@ -137,7 +137,6 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
 - Keep the finger payment as a fallback for locked chests, or make a key the only way?
 - Should unvisited neighbour rooms stay hidden as "?" (only treasure, surgeon and exit are shown)?
 - Which asset sources for the realistic look?
-- Put the project under git?
 
 ## Playtest notes
 
@@ -146,6 +145,8 @@ _Add what feels off here after each session._
 - None of the 81 parts has been balanced or played by hand yet; numbers are first guesses.
 
 ## How to run
+
+- Source: private repo `tellmemoree/body-part` on GitHub, branch `main`.
 
 - Play: open the project in Godot, press F5.
 - Mechanics test: `Godot --headless --path . -- --smoke`
