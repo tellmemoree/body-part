@@ -1,0 +1,503 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Spare Parts (POC)</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#0c0c10;font-family:ui-monospace,Menlo,monospace}
+#gl,#ui{position:absolute;left:0;top:0;width:100%;height:100%}
+#ui{pointer-events:none}
+#gl{cursor:crosshair}
+</style></head><body>
+<canvas id="gl"></canvas><canvas id="ui"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+// ---------- helpers ----------
+const AW=20,AH=13; // arena half extents
+const rnd=(a,b)=>a+Math.random()*(b-a), pick=a=>a[Math.floor(Math.random()*a.length)], chance=p=>Math.random()<p;
+const d2=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
+const angDiff=(a,b)=>Math.abs((((a-b)%(2*Math.PI))+3*Math.PI)%(2*Math.PI)-Math.PI);
+const clampPos=o=>{o.x=Math.max(-AW+1,Math.min(AW-1,o.x));o.z=Math.max(-AH+1,Math.min(AH-1,o.z));return o};
+
+// ---------- content ----------
+const TYPES={
+ hand:{flesh:{n:'hand',c:0xe9a98c},fist:{n:'robot fist',c:0x5fb4e0},claw:{n:'claw',c:0xc0392b},hook:{n:'hook hand',c:0xc9c9d6},cannon:{n:'wrist cannon',c:0xe0a030}},
+ leg:{flesh:{n:'leg',c:0xe9a98c},robot:{n:'robot leg',c:0x5fb4e0},spring:{n:'spring leg',c:0x6fd36f},peg:{n:'peg leg',c:0x8a5a2b}},
+ eye:{flesh:{n:'eye',c:0xffffff},cyber:{n:'cyber eye',c:0xff3355},cat:{n:'cat eye',c:0xd7f03c}},
+ organ:{heart2:{n:'second heart',c:0xe0406a},adrenal:{n:'adrenal gland',c:0xff8a2a},liver:{n:'regen liver',c:0x9a4a6a}}
+};
+const TIP={fist:'huge punch, smashes locks & doors, no guns',claw:'very fast slashes, bleed, no guns',hook:'yanks enemies & items to you',cannon:'explosive shots, needs no fingers',
+ robot:'SPACE: damaging dash, kicks doors open',spring:'SPACE: leap + shockwave',peg:'slow, immune to spikes & knockback',
+ cyber:'shows enemy HP, mimics, laser sight',cat:'see in dark rooms',heart2:'+2 max HP',adrenal:'faster for every missing part',liver:'heal 1 HP per cleared room'};
+const SLOT={le:['eye','L eye'],re:['eye','R eye'],lh:['hand','L hand'],rh:['hand','R hand'],ll:['leg','L leg'],rl:['leg','R leg'],org:['organ','organ']};
+const LIMBS=['le','re','lh','rh','ll','rl'];
+const SIDE={L:{eye:'le',hand:'lh',leg:'ll',organ:'org'},R:{eye:'re',hand:'rh',leg:'rl',organ:'org'}};
+const GUNS={
+ pistol:{n:'pistol',hands:1,fingers:3,cd:.32,dmg:1,spd:30,spread:.03,len:.5},
+ smg:{n:'SMG',hands:1,fingers:4,cd:.085,dmg:.45,spd:28,spread:.16,len:.7},
+ shotgun:{n:'shotgun',hands:2,fingers:2,cd:.75,dmg:1,spd:26,spread:.45,pellets:6,recoil:11,life:.45,len:1.1},
+ sniper:{n:'sniper',hands:2,fingers:3,cd:1.1,dmg:5,spd:70,spread:0,pierce:true,len:1.6},
+ knife:{n:'knife',hands:1,fingers:1,melee:true,cd:.28,dmg:2,range:2.7,arc:1.0,len:.6}
+};
+const ENEMY={
+ grunt:{hp:3,spd:4.3,r:.7,c:0xcc4444,sev:.4},
+ spitter:{hp:2,spd:3.2,r:.6,c:0xcc55aa,sev:.3},
+ slasher:{hp:2,spd:7.2,r:.55,c:0xdd7733,sev:.6},
+ leaper:{hp:3,spd:3.5,r:.65,c:0x4fa34f,sev:.4},
+ brute:{hp:9,spd:2.7,r:1.2,c:0x556688,sev:.75,kb:16},
+ mimic:{hp:7,spd:6.3,r:.9,c:0x9a6a2a,sev:.6}
+};
+const ROOMS={fight:'FIGHT',treasure:'TREASURE · chests',surgeon:'SURGEON · trade flesh for parts',dark:'DARK · better loot',elite:'ELITE · big guy, big reward'};
+
+// ---------- three setup ----------
+const glc=document.getElementById('gl'),uic=document.getElementById('ui'),ctx=uic.getContext('2d');
+const renderer=new THREE.WebGLRenderer({canvas:glc,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x0c0c10);
+const cam=new THREE.PerspectiveCamera(45,1,.1,200);
+const amb=new THREE.AmbientLight(0xffffff,.65);scene.add(amb);
+const sun=new THREE.DirectionalLight(0xffffff,.7);sun.position.set(8,20,10);scene.add(sun);
+let UW=1,UH=1;
+function resize(){UW=innerWidth;UH=innerHeight;renderer.setSize(UW,UH,false);uic.width=UW;uic.height=UH;cam.aspect=UW/UH;cam.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+const M=c=>new THREE.MeshLambertMaterial({color:c});
+function box(w,h,d,c,x=0,y=0,z=0){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),M(c));m.position.set(x,y,z);return m}
+function ball(r,c,x=0,y=0,z=0){const m=new THREE.Mesh(new THREE.SphereGeometry(r,12,10),M(c));m.position.set(x,y,z);return m}
+function cone(r,h,c,x=0,y=0,z=0){const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,8),M(c));m.position.set(x,y,z);return m}
+function cyl(r,h,c,x=0,y=0,z=0){const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,10),M(c));m.position.set(x,y,z);return m}
+function grp(...ch){const g=new THREE.Group();ch.forEach(c=>g.add(c));return g}
+// static arena
+const floorMesh=box(AW*2,.2,AH*2,0x2a2a36,0,-.1,0);scene.add(floorMesh);
+scene.add(box(AW*2+1,2,.5,0x44445a,0,1,-AH-.25),box(AW*2+1,2,.5,0x44445a,0,1,AH+.25),box(.5,2,AH*2,0x44445a,-AW-.25,1,0),box(.5,2,AH*2,0x44445a,AW+.25,1,0));
+const roomG=new THREE.Group();scene.add(roomG);
+const pg=new THREE.Group();scene.add(pg);
+const v3=new THREE.Vector3();
+function proj(x,y,z){v3.set(x,y,z).project(cam);return{x:(v3.x+1)/2*UW,y:(1-v3.y)/2*UH}}
+
+// ---------- state ----------
+let P,enemies,bullets,items,chests,spikes,doors,altar,room,floor,fx,over,time,msg='',msgT=0,dirty=true,pendingRoom=null,kills=0;
+const keys={},mb={L:false,R:false},mouseN=new THREE.Vector2(0,0),aimPt={x:0,z:0};
+const ray=new THREE.Raycaster(),ground=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k===' ')e.preventDefault();if(keys[k])return;keys[k]=true;
+ if(k==='q')interact('L');if(k==='e')interact('R');if(k===' ')ability();if(k==='r'&&over)newGame()});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+addEventListener('mousemove',e=>{mouseN.set(e.clientX/UW*2-1,-(e.clientY/UH)*2+1)});
+addEventListener('mousedown',e=>{if(e.button===0)mb.L=true;if(e.button===2)mb.R=true});
+addEventListener('mouseup',e=>{if(e.button===0)mb.L=false;if(e.button===2)mb.R=false});
+addEventListener('contextmenu',e=>e.preventDefault());
+function say(m,t=3.5){msg=m;msgT=t}
+
+const maxHp=()=>6+(P.parts.org&&P.parts.org.type==='heart2'?2:0);
+const missing=()=>LIMBS.filter(s=>!P.parts[s]).length;
+const haste=()=>P.parts.org&&P.parts.org.type==='adrenal'?1+.1*missing():1;
+const eyes=()=>(P.parts.le?1:0)+(P.parts.re?1:0);
+const hasType=(slots,t)=>slots.some(s=>P.parts[s]&&P.parts[s].type===t);
+const legs=()=>['ll','rl'].map(s=>P.parts[s]).filter(Boolean);
+const partName=(kind,type)=>TYPES[kind][type].n;
+
+function newGame(){
+ P={x:0,z:AH-2,y:0,hp:6,inv:0,cdL:0,cdR:0,cdSp:0,dash:null,kx:0,kz:0,aim:-Math.PI/2,
+  parts:{le:{type:'flesh'},re:{type:'flesh'},lh:{type:'flesh',fingers:5,held:null},rh:{type:'flesh',fingers:5,held:'pistol'},ll:{type:'flesh'},rl:{type:'flesh'},org:null}};
+ floor=0;over=false;time=0;kills=0;dirty=true;pendingRoom=null;
+ enterRoom('fight');
+ say('Left click = left hand. Right click = right hand. Q / E grab things with that side.',7);
+}
+
+// ---------- rooms ----------
+function spawn(type,o={}){
+ const d=ENEMY[type],hp=Math.ceil(d.hp*(1+floor*.06)*(o.elite?2.4:1));
+ const e=Object.assign({type,x:rnd(-AW+3,AW-3),z:rnd(-AH+2,0),hp,maxhp:hp,spd:d.spd,r:d.r*(o.elite?1.3:1),sev:d.sev,kb:d.kb||0,cd:rnd(1,2.5),st:'walk',t:0,kx:0,kz:0,stun:0,bleed:0,flash:0},o);
+ enemies.push(e);return e;
+}
+function enterRoom(type){
+ floor++;room={type,dark:type==='dark',cleared:false};
+ while(roomG.children.length)roomG.remove(roomG.children[0]);
+ enemies=[];bullets=[];items=[];chests=[];spikes=[];doors=[];altar=null;fx=[];
+ P.x=0;P.z=AH-2;P.dash=null;P.kx=P.kz=0;P.y=0;
+ floorMesh.material.color.setHex(room.dark?0x15151c:type==='surgeon'?0x2c2430:0x2a2a36);
+ amb.intensity=room.dark?.3:.65;sun.intensity=room.dark?.25:.7;
+ let budget=type==='surgeon'?0:type==='treasure'?1+floor*.5:2+floor*1.2;
+ if(floor===1)budget=2;
+ if(type==='elite'){spawn('brute',{elite:true});budget=Math.max(0,budget-4)}
+ const pool=[['grunt',1]];
+ if(floor>=2)pool.push(['spitter',1.5]);if(floor>=3)pool.push(['slasher',1.5]);if(floor>=4)pool.push(['leaper',2]);if(floor>=6)pool.push(['brute',3]);
+ while(budget>0){const[t,c]=pick(pool);spawn(t);budget-=c}
+ const nCh=type==='treasure'?2:type==='dark'||type==='elite'?1:(floor>1&&chance(.3)?1:0);
+ for(let i=0;i<nCh;i++){
+  const ct=type==='elite'||type==='dark'?'locked':floor>=3&&chance(.22)?'mimic':chance(.3)?'locked':'normal';
+  chests.push({x:rnd(-AW+4,AW-4),z:rnd(-AH+3,3),type:ct,open:false});
+ }
+ if(floor>=2&&type!=='surgeon'){const n=Math.floor(rnd(0,3.5));for(let i=0;i<n;i++)spikes.push({x:rnd(-AW+4,AW-4),z:rnd(-AH+4,AH-6),w:rnd(2,4),h:rnd(2,4)})}
+ if(type==='surgeon')altar={x:0,z:-3,used:false};
+ if(!P.parts.lh&&!P.parts.rh){items.push({kind:'part',pk:'hand',type:'flesh',fingers:5,x:rnd(-4,4),z:AH-5});say('A stray hand twitches on the floor nearby...')}
+ if(!enemies.length)clearRoom();
+}
+function clearRoom(){
+ room.cleared=true;
+ const opts=['fight','fight','treasure','surgeon','dark'];if(floor>=3)opts.push('elite','elite');
+ const a=pick(opts);let b=pick(opts),n=0;while(b===a&&n++<10)b=pick(opts);
+ doors=[{x:-6,z:-AH,to:a},{x:6,z:-AH,to:b}];
+ if(P.parts.org&&P.parts.org.type==='liver'&&P.hp<maxHp())P.hp++;
+ if(room.type!=='surgeon')say('Room clear. Pick a door (Q or E, needs a hand on that side).');
+ if(!P.parts.lh&&!P.parts.rh&&!hasType(['ll','rl'],'robot')&&!items.some(i=>i.pk==='hand'))
+  items.push({kind:'part',pk:'hand',type:'flesh',fingers:4,x:0,z:0});
+}
+
+// ---------- loot ----------
+function loot(x,z,rare){
+ const r=Math.random(),o=clampPos({x:x+rnd(-1.2,1.2),z:z+rnd(.8,2)});
+ if(r<.3)items.push({kind:'weapon',id:pick(['smg','shotgun','sniper','knife','pistol','smg','shotgun']),...o});
+ else if(r<.72||rare){const pk=pick(['hand','hand','leg','leg','eye']);items.push({kind:'part',pk,type:pick(Object.keys(TYPES[pk]).filter(t=>t!=='flesh')),fingers:0,...o})}
+ else if(r<.84)items.push({kind:'part',pk:'organ',type:pick(Object.keys(TYPES.organ)),...o});
+ else if(r<.94)items.push({kind:'heart',...o});
+ else items.push({kind:'finger',...o});
+}
+function enemyDrop(e){
+ kills++;const o={x:e.x,z:e.z};
+ const part=(pk,type,f)=>items.push({kind:'part',pk,type,fingers:f||0,...o});
+ if(e.type==='grunt'&&chance(.12)){const pk=pick(['hand','leg','eye']);part(pk,'flesh',pk==='hand'?5:0)}
+ else if(e.type==='spitter'&&chance(.22))part('eye',pick(['cyber','cat']));
+ else if(e.type==='slasher'&&chance(.28))part('hand','claw');
+ else if(e.type==='leaper'&&chance(.3))part('leg','spring');
+ else if(e.type==='brute'&&(e.elite||chance(.45)))part('hand','fist');
+ else if(chance(.08))items.push({kind:'heart',...o});
+ else if(chance(.06))items.push({kind:'finger',...o});
+ if(e.type==='mimic'||e.elite){loot(e.x,e.z,true);loot(e.x,e.z)}
+}
+
+// ---------- body ----------
+function dropHeld(s){
+ const h=P.parts[s];if(!h||!h.held)return;const id=h.held;
+ if(GUNS[id].hands===2)['lh','rh'].forEach(k=>{if(P.parts[k]&&P.parts[k].held===id)P.parts[k].held=null});else h.held=null;
+ items.push(clampPos({kind:'weapon',id,x:P.x+rnd(-1.5,1.5),z:P.z+rnd(-1.5,1.5)}));dirty=true;
+}
+function checkGrip(){
+ ['lh','rh'].forEach(s=>{const h=P.parts[s];if(!h||!h.held)return;const g=GUNS[h.held];
+  const other=P.parts[s==='lh'?'rh':'lh'];
+  if(h.fingers<g.fingers||(g.hands===2&&(!other||other.held!==h.held))){say('You fumble the '+g.n+'!');dropHeld(s)}});
+}
+function sever(slot){
+ const present=LIMBS.filter(s=>P.parts[s]);if(!present.length)return;
+ const s=slot||pick(present),p=P.parts[s],kind=SLOT[s][0];
+ if(!slot&&kind==='hand'&&p.type==='flesh'&&p.fingers>0&&chance(.5)){
+  const n=Math.min(p.fingers,1+Math.floor(Math.random()*2));p.fingers-=n;
+  if(chance(.6))items.push(clampPos({kind:'finger',x:P.x+rnd(-2,2),z:P.z+rnd(-2,2)}));
+  say('Lost '+n+' finger'+(n>1?'s':'')+' on your '+SLOT[s][1]+'! Slower trigger.');checkGrip();dirty=true;return;
+ }
+ dropHeld(s);P.parts[s]=null;
+ items.push(clampPos({kind:'part',pk:kind,type:p.type,fingers:p.fingers||0,rot:25,x:P.x+rnd(-2.5,2.5),z:P.z+rnd(-2.5,2.5)}));
+ say('Your '+SLOT[s][1]+' came off! Grab it before it rots.');checkGrip();dirty=true;
+}
+function hurt(dmg,sevChance,src){
+ if(P.inv>0||P.dash||over)return;
+ P.hp-=dmg;P.inv=.9;
+ if(src&&src.kb&&!hasType(['ll','rl'],'peg')){const a=Math.atan2(P.z-src.z,P.x-src.x);P.kx+=Math.cos(a)*src.kb;P.kz+=Math.sin(a)*src.kb}
+ if(chance(sevChance))sever();
+ if(P.hp<=0){over=true;say('')}
+}
+
+// ---------- interaction ----------
+function nearest(list,r){let b=null,bd=r;for(const o of list){const d=d2(o,P);if(d<bd){bd=d;b=o}}return b}
+function interact(side){
+ if(over||!P)return;const hs=SIDE[side].hand,hand=P.parts[hs],sideN=side==='L'?'left':'right';
+ const it=nearest(items,2.2);if(it)return takeItem(it,side);
+ const ch=nearest(chests.filter(c=>!c.open),2.8);
+ if(ch){if(!hand)return say('No '+sideN+' hand to open it with.');return openChest(ch,hs)}
+ if(altar&&!altar.used&&d2(altar,P)<3.2)return useAltar(side);
+ const dr=nearest(doors,3.2);
+ if(dr){if(!hand)return say('No '+sideN+' hand for the door. (A robot leg dash can kick it down.)');pendingRoom=dr.to}
+}
+function takeItem(it,side){
+ const hs=SIDE[side].hand,h=P.parts[hs];
+ if(it.kind==='heart'){if(P.hp>=maxHp())return say('Already at full health.');P.hp=Math.min(maxHp(),P.hp+2)}
+ else if(it.kind==='finger'){
+  if(!h||h.type!=='flesh')return say('Fingers need a flesh hand on that side.');
+  if(h.fingers>=5)return say('That hand has all its fingers. Try the other side.');
+  h.fingers++;say('Finger reattached.');
+ }else if(it.kind==='weapon'){
+  const g=GUNS[it.id];
+  if(g.hands===2){
+   const ok=['lh','rh'].every(k=>P.parts[k]&&P.parts[k].type==='flesh'&&P.parts[k].fingers>=g.fingers);
+   if(!ok)return say('The '+g.n+' needs two flesh hands with '+g.fingers+'+ fingers each.');
+   dropHeld('lh');dropHeld('rh');P.parts.lh.held=P.parts.rh.held=it.id;
+  }else{
+   if(!h)return say('No hand on that side. Try the other key.');
+   if(h.type!=='flesh')return say('A '+partName('hand',h.type)+" can't hold a weapon.");
+   if(h.fingers<g.fingers)return say('The '+g.n+' needs '+g.fingers+'+ fingers.');
+   dropHeld(hs);h.held=it.id;
+  }
+  say('Equipped '+g.n+'.');
+ }else{
+  const s=SIDE[side][it.pk],old=P.parts[s];
+  if(old){dropHeld(s);items.push(clampPos({kind:'part',pk:it.pk,type:old.type,fingers:old.fingers||0,x:P.x+rnd(-2,2),z:P.z+2}))}
+  P.parts[s]=it.pk==='hand'?{type:it.type,fingers:it.type==='flesh'?it.fingers:0,held:null}:{type:it.type};
+  P.hp=Math.min(P.hp,maxHp());checkGrip();
+  say((old?'Swapped in ':'Attached ')+partName(it.pk,it.type)+(TIP[it.type]?' — '+TIP[it.type]:'')+'.',5);
+ }
+ items=prune(items,i=>i!==it);dirty=true;
+}
+function openChest(c,hs){
+ const h=P.parts[hs];
+ if(c.type==='mimic'){say('MIMIC! It bit your hand off!');sever(hs);return wake(c)}
+ if(c.type==='locked'){
+  if(h.type==='fist')return smashChest(c);
+  if(h.type==='flesh'&&h.fingers>0){h.fingers--;say('The lock bites off a finger. It opens.');checkGrip();dirty=true}
+  else return say('Locked. Smash it with a robot fist, or pay a finger.');
+ }
+ popChest(c);
+}
+function popChest(c){c.open=true;if(c.m)c.m.children[1].visible=false;loot(c.x,c.z,c.type==='locked');if(c.type==='locked')loot(c.x,c.z)}
+function smashChest(c){if(c.open)return;if(c.type==='mimic')return wake(c);if(c.type==='locked')say('Smashed the lock.');popChest(c)}
+function wake(c){c.open=true;if(c.m)roomG.remove(c.m);c.gone=true;spawn('mimic',{x:c.x,z:c.z,cd:0});room.cleared=room.cleared&&false}
+function useAltar(side){
+ const cands=(side==='L'?['le','lh','ll']:['re','rh','rl']).filter(s=>P.parts[s]&&P.parts[s].type==='flesh');
+ if(!cands.length)return say('The surgeon wants flesh from your '+(side==='L'?'left':'right')+' side. You have none there.');
+ const s=pick(cands);dropHeld(s);P.parts[s]=null;altar.used=true;checkGrip();dirty=true;
+ loot(altar.x,altar.z+1,true);loot(altar.x,altar.z+1,true);
+ say('The surgeon takes your '+SLOT[s][1]+'. Fair trade.');
+}
+
+// ---------- combat ----------
+function hit(e,dmg,a,kb){e.hp-=dmg;e.flash=.12;if(kb&&a!==undefined){e.kx+=Math.cos(a)*kb;e.kz+=Math.sin(a)*kb}}
+function melee(a,range,arc,dmg,kb,o={}){
+ fx.push({k:'arc',x:P.x,z:P.z,a,arc,r:range,t:.14,life:.14,c:o.c||'#fff'});
+ for(const e of enemies){const ea=Math.atan2(e.z-P.z,e.x-P.x);
+  if(d2(e,P)<range+e.r&&angDiff(ea,a)<arc){hit(e,dmg,ea,kb);if(o.bleed)e.bleed=o.bleed}}
+ for(const c of chests){if(c.open)continue;const ca=Math.atan2(c.z-P.z,c.x-P.x);
+  if(d2(c,P)<range+.8&&angDiff(ca,a)<arc){if(o.smash)smashChest(c);else if(c.type==='mimic')wake(c)}}
+ if(o.smash)for(const d of doors)if(d2(d,P)<range+1.2)pendingRoom=d.to;
+}
+function shoot(a,g,extra){
+ const spread=g.spread+[.5,.07,0][eyes()];
+ for(let i=0;i<(g.pellets||1);i++){const b=a+rnd(-spread,spread);
+  bullets.push(Object.assign({x:P.x+Math.cos(a)*1.1,z:P.z+Math.sin(a)*1.1,vx:Math.cos(b)*g.spd,vz:Math.sin(b)*g.spd,mine:true,dmg:g.dmg,pierce:g.pierce,life:g.life||1.6,hits:[]},extra))}
+ if(g.recoil){P.kx-=Math.cos(a)*g.recoil;P.kz-=Math.sin(a)*g.recoil}
+}
+function hookShot(a){
+ let best=null,bd=14;
+ for(const e of enemies){const d=d2(e,P);if(d<bd&&angDiff(Math.atan2(e.z-P.z,e.x-P.x),a)<.25){bd=d;best=e}}
+ if(!best)for(const i of items){const d=d2(i,P);if(d<bd&&d>2&&angDiff(Math.atan2(i.z-P.z,i.x-P.x),a)<.25){bd=d;best=i}}
+ const ex=P.x+Math.cos(a)*bd,ez=P.z+Math.sin(a)*bd;
+ fx.push({k:'line',x:P.x,z:P.z,x2:ex,z2:ez,t:.18,life:.18,c:'#ccd'});
+ if(!best)return;
+ best.x=P.x+Math.cos(a)*1.9;best.z=P.z+Math.sin(a)*1.9;
+ if(best.hp!==undefined){best.stun=1.2;hit(best,1);best.kx=best.kz=0}
+}
+function act(side){
+ const s=SIDE[side].hand,h=P.parts[s],ck=side==='L'?'cdL':'cdR';
+ if(!h){if(msgT<=0)say('No '+(side==='L'?'left':'right')+' hand!',1.5);return}
+ if(P[ck]>0||P.dash)return;
+ const a=P.aim,H=haste(),cd=v=>P[ck]=v/H;
+ if(h.type==='flesh'){
+  if(!h.held){melee(a,1.9,.9,1,3);return cd(.4)}
+  const g=GUNS[h.held],slow=1+(5-h.fingers)*.15;
+  if(g.melee){melee(a,g.range,g.arc,g.dmg,4);return cd(g.cd*slow)}
+  shoot(a,g);cd(g.cd*slow);if(g.hands===2)P.cdL=P.cdR=g.cd*slow/H;
+ }else if(h.type==='fist'){melee(a,2.7,.9,4,16,{smash:true,c:'#7cf'});cd(.6)}
+ else if(h.type==='claw'){melee(a,2.4,1.3,1.1,1,{bleed:3,c:'#f66'});cd(.17)}
+ else if(h.type==='hook'){hookShot(a);cd(1.1)}
+ else if(h.type==='cannon'){shoot(a,{spd:20,dmg:3,spread:0},{explode:3.2,big:true});cd(1.3)}
+}
+function ability(){
+ if(over||!P||P.cdSp>0||P.dash)return;
+ const L=legs();if(!L.length)return say('No legs, no dodge.');
+ const t=['spring','robot','flesh'].find(t=>L.some(l=>l.type===t));
+ if(!t)return say("Peg legs can't dodge (but they ignore spikes).");
+ let dx=(keys.d?1:0)-(keys.a?1:0),dz=(keys.s?1:0)-(keys.w?1:0);
+ if(!dx&&!dz){dx=Math.cos(P.aim);dz=Math.sin(P.aim)}const l=Math.hypot(dx,dz);dx/=l;dz/=l;
+ const one=L.length===1?.65:1;let cd;
+ if(t==='flesh'){P.dash={t:.2,dur:.2,vx:dx*24*one,vz:dz*24*one,type:t,hits:[]};cd=1}
+ else if(t==='robot'){P.dash={t:.22,dur:.22,vx:dx*38*one,vz:dz*38*one,type:t,hits:[]};cd=.9}
+ else{const dist=Math.min(11*one,Math.max(3,Math.hypot(aimPt.x-P.x,aimPt.z-P.z))),a=P.aim;
+  P.dash={t:.5,dur:.5,vx:Math.cos(a)*dist/.5,vz:Math.sin(a)*dist/.5,type:t,hits:[]};cd=1.5}
+ P.cdSp=cd/haste();
+}
+function explode(x,z,r,dmg){fx.push({k:'ring',x,z,r,t:.25,life:.25,c:'#fa4'});for(const e of enemies)if(d2(e,{x,z})<r+e.r)hit(e,dmg,Math.atan2(e.z-z,e.x-x),8)}
+
+function prune(list,keep,on){const out=[];for(const o of list){if(keep(o))out.push(o);else{if(o.m)roomG.remove(o.m);if(on)on(o)}}return out}
+
+// ---------- update ----------
+function update(dt){
+ time+=dt;msgT-=dt;P.inv-=dt;P.cdL-=dt;P.cdR-=dt;P.cdSp-=dt;
+ ray.setFromCamera(mouseN,cam);if(ray.ray.intersectPlane(ground,v3)){aimPt.x=v3.x;aimPt.z=v3.z}
+ P.aim=Math.atan2(aimPt.z-P.z,aimPt.x-P.x);
+ // movement
+ const L=legs();
+ if(P.dash){
+  const D=P.dash;P.x+=D.vx*dt;P.z+=D.vz*dt;D.t-=dt;
+  P.y=D.type==='spring'?Math.sin(Math.PI*(1-D.t/D.dur))*3.2:0;
+  if(D.type==='robot'){
+   for(const e of enemies)if(!D.hits.includes(e)&&d2(e,P)<e.r+1.3){D.hits.push(e);hit(e,2,Math.atan2(D.vz,D.vx),14)}
+   for(const c of chests)if(!c.open&&d2(c,P)<1.8)smashChest(c);
+   for(const d of doors)if(d2(d,P)<2.4)pendingRoom=d.to;
+  }
+  if(D.t<=0){P.dash=null;P.y=0;P.inv=Math.max(P.inv,.15);if(D.type==='spring')explode(P.x,P.z,3.6,2)}
+ }else{
+  let dx=(keys.d?1:0)-(keys.a?1:0),dz=(keys.s?1:0)-(keys.w?1:0),sp=9*haste();
+  if(L.length===1)sp*=.15+.75*Math.abs(Math.sin(time*7));else if(!L.length)sp*=.22;
+  for(const l of L)sp*=l.type==='robot'?1.1:l.type==='peg'?.9:1;
+  if(dx||dz){const l=Math.hypot(dx,dz);P.x+=dx/l*sp*dt;P.z+=dz/l*sp*dt}
+  P.y=L.length===1?Math.abs(Math.sin(time*7))*.5:0;
+ }
+ P.x+=P.kx*dt;P.z+=P.kz*dt;const dec=Math.exp(-8*dt);P.kx*=dec;P.kz*=dec;clampPos(P);
+ if(mb.L)act('L');if(mb.R)act('R');
+ // bullets
+ for(const b of bullets){
+  b.x+=b.vx*dt;b.z+=b.vz*dt;b.life-=dt;
+  if(b.mine){
+   for(const e of enemies){if(b.dead||b.hits.includes(e))continue;
+    if(d2(b,e)<e.r+.25){if(b.explode){b.dead=true}else{hit(e,b.dmg,Math.atan2(b.vz,b.vx),3);if(b.pierce)b.hits.push(e);else b.dead=true}}}
+   for(const c of chests)if(!c.open&&c.type==='mimic'&&d2(b,c)<1){wake(c);b.dead=true}
+  }else if(!P.dash&&d2(b,P)<.75){b.dead=true;hurt(1,.35)}
+  if(Math.abs(b.x)>AW||Math.abs(b.z)>AH||b.life<=0)b.dead=true;
+  if(b.dead&&b.explode)explode(b.x,b.z,b.explode,b.dmg);
+ }
+ bullets=prune(bullets,b=>!b.dead);
+ // enemies
+ for(const e of enemies){
+  e.flash-=dt;if(e.bleed>0){e.bleed-=dt;e.hp-=dt}
+  e.x+=e.kx*dt;e.z+=e.kz*dt;e.kx*=dec;e.kz*=dec;
+  if(e.stun>0){e.stun-=dt;clampPos(e);continue}
+  const a=Math.atan2(P.z-e.z,P.x-e.x),d=d2(e,P);e.a=a;let mv=e.spd,dir=a;
+  if(e.type==='spitter'){
+   if(d<6)dir=a+Math.PI;else if(d<11)mv=0;
+   e.cd-=dt;if(e.cd<=0){e.cd=1.9;bullets.push({x:e.x,z:e.z,vx:Math.cos(a)*11,vz:Math.sin(a)*11,mine:false,life:4,hits:[]})}
+  }else if(e.type==='leaper'){
+   if(e.st==='walk'){e.cd-=dt;if(e.cd<=0&&d<13){e.st='wind';e.t=.5;e.la=a}}
+   else if(e.st==='wind'){mv=0;e.t-=dt;if(e.t<=0){e.st='leap';e.t=.45}}
+   else{mv=22;dir=e.la;e.a=e.la;e.t-=dt;if(e.t<=0){e.st='walk';e.cd=2.2}}
+  }
+  e.x+=Math.cos(dir)*mv*dt;e.z+=Math.sin(dir)*mv*dt;
+  if(d<e.r+.7)hurt(1,e.sev,e);
+  clampPos(e);
+ }
+ for(let i=0;i<enemies.length;i++)for(let j=i+1;j<enemies.length;j++){
+  const A=enemies[i],B=enemies[j],d=d2(A,B),m=A.r+B.r;
+  if(d<m&&d>0.001){const px=(A.x-B.x)/d*(m-d)/2,pz=(A.z-B.z)/d*(m-d)/2;A.x+=px;A.z+=pz;B.x-=px;B.z-=pz}}
+ // hazards & rot
+ if(!P.dash&&!hasType(['ll','rl'],'peg'))for(const s of spikes)if(Math.abs(P.x-s.x)<s.w/2&&Math.abs(P.z-s.z)<s.h/2)hurt(1,.2);
+ for(const i of items)if(i.rot!==undefined){i.rot-=dt;if(i.rot<=0){i.dead=true;say('Your '+partName(i.pk,i.type)+' rotted away.')}}
+ items=prune(items,i=>!i.dead);
+ chests=prune(chests,c=>!c.gone);
+ enemies=prune(enemies,e=>e.hp>0,enemyDrop);
+ for(const f of fx)f.t-=dt;fx=fx.filter(f=>f.t>0);
+ if(!enemies.length&&!doors.length)clearRoom();
+ if(pendingRoom){const r=pendingRoom;pendingRoom=null;enterRoom(r)}
+}
+
+// ---------- meshes ----------
+function buildPlayer(){
+ while(pg.children.length)pg.remove(pg.children[0]);
+ const skin=0xe9a98c,p=P.parts;
+ pg.add(box(.9,1,.5,0x3a4a7a,0,1.5,0),ball(.36,skin,0,2.35,0));
+ [['le',.15],['re',-.15]].forEach(([s,x])=>pg.add(ball(p[s]?.09:.07,p[s]?TYPES.eye[p[s].type].c:0x330000,x,2.42,.31)));
+ const two=p.lh&&p.lh.held&&GUNS[p.lh.held].hands===2;
+ [['lh',.62],['rh',-.62]].forEach(([s,x])=>{const h=p[s];
+  if(!h)return pg.add(box(.24,.24,.2,0x882222,x,1.7,0));
+  const c=TYPES.hand[h.type].c;pg.add(box(.22,.22,.9,h.type==='flesh'?skin:c,x,1.6,.35));
+  if(h.type==='flesh')pg.add(box(.24,.24,.1+.04*h.fingers,0xf3c4a8,x,1.6,.9));
+  else if(h.type==='fist')pg.add(box(.5,.5,.55,c,x,1.6,1));
+  else if(h.type==='claw'){const k=cone(.16,.8,c,x,1.6,1.15);k.rotation.x=Math.PI/2;pg.add(k)}
+  else if(h.type==='hook'){const k=cone(.08,.7,c,x,1.6,1.1);k.rotation.x=Math.PI/2;pg.add(k)}
+  else{const k=cyl(.2,.8,c,x,1.6,1.05);k.rotation.x=Math.PI/2;pg.add(k)}
+  if(h.held&&!two){const g=GUNS[h.held];pg.add(box(.12,g.melee?.06:.2,g.len,g.melee?0xdddddd:0x222222,x,1.62,1+g.len/2))}
+ });
+ if(two){const g=GUNS[p.lh.held];pg.add(box(.16,.22,g.len,0x222222,0,1.6,.9+g.len/2))}
+ [['ll',.24],['rl',-.24]].forEach(([s,x])=>{const l=p[s];if(!l)return;const c=TYPES.leg[l.type].c;
+  pg.add(l.type==='peg'?cyl(.08,1,c,x,.5,0):l.type==='spring'?cyl(.16,1,c,x,.5,0):box(.28,1,.28,l.type==='flesh'?0x2a3350:c,x,.5,0))});
+ if(p.org)pg.add(ball(.14,TYPES.organ[p.org.type].c,0,1.6,.27));
+}
+function mkEnemy(e){
+ const c=ENEMY[e.type].c,s=e.r/ENEMY[e.type].r;let g;
+ if(e.type==='grunt')g=grp(box(1,1.5,.7,c,0,.85,0),ball(.3,0xe9a98c,0,1.9,0));
+ else if(e.type==='spitter')g=grp(ball(.6,c,0,.8,0),ball(.16,0xff3355,0,1.05,.5),cone(.2,.6,c,0,1.6,0));
+ else if(e.type==='slasher'){const a=cone(.14,.9,0xc0392b,.45,1,.6),b=cone(.14,.9,0xc0392b,-.45,1,.6);a.rotation.x=b.rotation.x=Math.PI/2;g=grp(box(.6,1.8,.5,c,0,.9,0),a,b)}
+ else if(e.type==='leaper')g=grp(ball(.6,c,0,1.1,0),cyl(.14,.9,0x6fd36f,.3,.45,0),cyl(.14,.9,0x6fd36f,-.3,.45,0));
+ else if(e.type==='brute')g=grp(box(1.9,2.2,1.3,c,0,1.2,0),box(.7,.7,.8,0x5fb4e0,1.2,1.2,.7),box(.7,.7,.8,0x5fb4e0,-1.2,1.2,.7),ball(.35,0xe9a98c,0,2.6,0));
+ else g=grp(box(1.5,.9,1.1,c,0,.5,0),cone(.12,.4,0xffffff,.4,1.1,.4),cone(.12,.4,0xffffff,0,1.1,.4),cone(.12,.4,0xffffff,-.4,1.1,.4));
+ g.userData.s=s;return g;
+}
+function mkItem(i){
+ if(i.kind==='heart')return grp(ball(.3,0xee3344,0,.5,0));
+ if(i.kind==='finger')return grp(box(.12,.12,.4,0xf3c4a8,0,.4,0));
+ if(i.kind==='weapon'){const g=GUNS[i.id];return grp(box(.16,g.melee?.06:.24,g.len+.3,g.melee?0xdddddd:0x777788,0,.5,0))}
+ const c=TYPES[i.pk][i.type].c;
+ if(i.pk==='eye')return grp(ball(.22,c,0,.5,0),ball(.08,0x111111,0,.5,.19));
+ if(i.pk==='organ')return grp(ball(.3,c,0,.5,0));
+ if(i.pk==='leg')return grp(box(.26,.9,.26,c,0,.55,0));
+ return grp(box(.24,.24,.7,c,0,.5,0),box(.34,.34,.3,c,0,.5,.45));
+}
+function mkChest(c){const col=c.type==='locked'?0x777799:0xa9762f;return grp(box(1.5,.7,1.1,col,0,.35,0),box(1.6,.35,1.2,c.type==='locked'?0x555577:0x8a5a1f,0,.85,0))}
+function mkBullet(b){return grp(ball(b.big?.3:.14,b.mine?(b.big?0xffaa33:0xffee66):0xff66ff,0,1.4,0))}
+function mkSpike(s){const g=grp(box(s.w,.06,s.h,0x551c1c,0,.03,0));for(let i=0;i<8;i++)g.add(cone(.15,.5,0xaa3333,rnd(-s.w/2+.2,s.w/2-.2),.25,rnd(-s.h/2+.2,s.h/2-.2)));return g}
+function mkDoor(d){return grp(box(3.2,3,.6,d.to==='elite'?0x993333:d.to==='treasure'?0xb9892f:d.to==='surgeon'?0x8a4a9a:d.to==='dark'?0x222233:0x3a8a5a,0,1.5,-.3))}
+function sync(list,mk){for(const o of list){if(!o.m){o.m=mk(o);roomG.add(o.m)}o.m.position.set(o.x,0,o.z)}}
+
+// ---------- render ----------
+const camT={x:0,z:0};
+function render(){
+ if(dirty){buildPlayer();dirty=false}
+ sync(enemies,mkEnemy);sync(items,mkItem);sync(chests,mkChest);sync(bullets,mkBullet);sync(spikes,mkSpike);sync(doors,mkDoor);
+ if(altar&&!altar.m){altar.m=grp(box(2.4,1,1.4,0x8a4a9a,0,.5,0),box(.2,1.4,.2,0xffffff,0,1.7,0),box(.9,.2,.2,0xffffff,0,1.9,0));roomG.add(altar.m);altar.m.position.set(altar.x,0,altar.z)}
+ for(const e of enemies){const s=e.m.userData.s*(e.flash>0?1.2:1);e.m.scale.set(s,s*(e.st==='wind'?.6:1),s);e.m.rotation.y=-(e.a||0)+Math.PI/2+(e.stun>0?time*12:0)}
+ for(const i of items){i.m.rotation.y=time*1.5;i.m.position.y=.15+Math.sin(time*3+i.x)*.12}
+ pg.position.set(P.x,P.y,P.z);pg.rotation.y=-P.aim+Math.PI/2;
+ pg.rotation.x=legs().length===0?1.2:0;pg.visible=!(P.inv>0&&Math.floor(time*20)%2);
+ camT.x+=(P.x*.7-camT.x)*.1;camT.z+=(P.z*.6-camT.z)*.1;
+ cam.position.set(camT.x,30,camT.z+19);cam.lookAt(camT.x,0,camT.z);
+ renderer.render(scene,cam);drawUI();
+}
+function label(t,x,y,z,c='#fff',size=12){const p=proj(x,y,z);ctx.font=size+'px ui-monospace,Menlo,monospace';ctx.textAlign='center';ctx.fillStyle='#000a';ctx.fillText(t,p.x+1,p.y+1);ctx.fillStyle=c;ctx.fillText(t,p.x,p.y)}
+const handLabel=s=>{const h=P.parts[s];return !h?'—':h.type==='flesh'?(h.held?GUNS[h.held].n:'jab'):partName('hand',h.type)};
+const spaceLabel=()=>{const L=legs();if(!L.length)return '—';const t=['spring','robot','flesh'].find(t=>L.some(l=>l.type===t));return t==='spring'?'leap':t==='robot'?'kick-dash':t==='flesh'?'roll':'—'};
+function drawUI(){
+ ctx.clearRect(0,0,UW,UH);ctx.lineWidth=3;
+ // fx
+ for(const f of fx){ctx.globalAlpha=f.t/f.life;ctx.strokeStyle=f.c;ctx.beginPath();
+  if(f.k==='line'){const a=proj(f.x,1.4,f.z),b=proj(f.x2,1.4,f.z2);ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y)}
+  else{const a0=f.k==='ring'?0:f.a-f.arc,a1=f.k==='ring'?Math.PI*2:f.a+f.arc,r=f.k==='ring'?f.r*(1-f.t/f.life*.6):f.r;
+   for(let i=0;i<=16;i++){const a=a0+(a1-a0)*i/16,p=proj(f.x+Math.cos(a)*r,.6,f.z+Math.sin(a)*r);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)}}
+  ctx.stroke()}
+ ctx.globalAlpha=1;
+ const cyber=hasType(['le','re'],'cyber');
+ if(cyber){const a=proj(P.x,1.5,P.z),b=proj(P.x+Math.cos(P.aim)*30,1.5,P.z+Math.sin(P.aim)*30);ctx.strokeStyle='#f356';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  for(const e of enemies){const p=proj(e.x,3,e.z);ctx.fillStyle='#000';ctx.fillRect(p.x-20,p.y,40,5);ctx.fillStyle='#f35';ctx.fillRect(p.x-20,p.y,40*Math.max(0,e.hp/e.maxhp),5)}}
+ // labels
+ for(const i of items){const n=i.kind==='part'?partName(i.pk,i.type)+(i.pk==='hand'&&i.type==='flesh'?' ('+i.fingers+'f)':''):i.kind==='weapon'?GUNS[i.id].n:i.kind;
+  label(n+(i.rot!==undefined?' '+Math.ceil(i.rot)+'s':''),i.x,1.6,i.z,i.rot!==undefined&&i.rot<8?'#f66':'#fff')}
+ for(const c of chests)if(!c.open)label(c.type==='mimic'&&cyber?'MIMIC!':c.type==='locked'?'locked chest':'chest',c.x,2,c.z,c.type==='mimic'&&cyber?'#f35':'#fd8');
+ for(const d of doors)label(ROOMS[d.to],d.x,4.2,d.z,'#fff',14);
+ if(altar&&!altar.used)label('SURGEON — Q: offer left flesh · E: offer right flesh',altar.x,3.2,altar.z,'#e9f',13);
+ const near=nearest(items,2.2);
+ if(near){const t=near.kind==='part'&&near.pk!=='organ'?'Q: attach left · E: attach right':near.kind==='weapon'&&GUNS[near.id].hands===1?'Q: left hand · E: right hand':'Q / E: take';label(t,P.x,4,P.z,'#ff8',13)}
+ // vision
+ const pp=proj(P.x,1.5,P.z);
+ const hole=r=>{const g=ctx.createRadialGradient(pp.x,pp.y,r*.55,pp.x,pp.y,r);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.95)');ctx.fillStyle=g;ctx.fillRect(0,0,UW,UH)};
+ if(eyes()===0)hole(120);
+ else{
+  if(room.dark&&!hasType(['le','re'],'cat'))hole(240);
+  if(eyes()===1){const left=!P.parts.le,g=ctx.createLinearGradient(left?0:UW,0,left?UW*.55:UW*.45,0);g.addColorStop(0,'rgba(0,0,0,.95)');g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.fillRect(0,0,UW,UH)}
+ }
+ // HUD
+ ctx.textAlign='left';ctx.font='15px ui-monospace,Menlo,monospace';ctx.fillStyle='#ddd';
+ ctx.fillText('Floor '+floor+' · '+ROOMS[room.type].split(' ·')[0]+'   kills '+kills,16,26);
+ ctx.fillStyle='#e44';ctx.font='20px ui-monospace,Menlo,monospace';ctx.fillText('♥'.repeat(Math.max(0,P.hp))+'♡'.repeat(Math.max(0,maxHp()-Math.max(0,P.hp))),16,52);
+ ctx.font='13px ui-monospace,Menlo,monospace';
+ const order=['le','re','lh','rh','ll','rl','org'];ctx.fillStyle='#0008';ctx.fillRect(UW-292,8,284,order.length*18+10);
+ order.forEach((s,i)=>{const p=P.parts[s],k=SLOT[s][0],y=28+i*18;
+  ctx.fillStyle='#999';ctx.fillText(SLOT[s][1],UW-282,y);
+  if(!p){ctx.fillStyle=s==='org'?'#666':'#e44';ctx.fillText(s==='org'?'none':'MISSING',UW-212,y);return}
+  ctx.fillStyle='#'+TYPES[k][p.type].c.toString(16).padStart(6,'0');
+  ctx.fillText(partName(k,p.type)+(k==='hand'&&p.type==='flesh'?' '+p.fingers+'f'+(p.held?' · '+GUNS[p.held].n:''):''),UW-212,y)});
+ // action bar
+ const bar=[['LMB',handLabel('lh'),P.cdL],['RMB',handLabel('rh'),P.cdR],['SPACE',spaceLabel(),P.cdSp]];
+ bar.forEach(([k,n,cd],i)=>{const x=UW/2-225+i*150,y=UH-44;ctx.fillStyle='#000a';ctx.fillRect(x,y,140,32);
+  if(cd>0){ctx.fillStyle='#fff2';ctx.fillRect(x,y,140*Math.min(1,cd),32)}
+  ctx.fillStyle=n==='—'?'#e44':'#fff';ctx.textAlign='center';ctx.fillText(k+': '+n,x+70,y+21)});
+ ctx.textAlign='left';ctx.fillStyle='#777';ctx.fillText('WASD move · Q/E use left/right side',16,UH-16);
+ if(msgT>0&&msg){ctx.textAlign='center';ctx.font='16px ui-monospace,Menlo,monospace';const w=ctx.measureText(msg).width+24;ctx.fillStyle='#000b';ctx.fillRect(UW/2-w/2,UH-92,w,30);ctx.fillStyle='#fff';ctx.fillText(msg,UW/2,UH-72)}
+ if(over){ctx.fillStyle='#000c';ctx.fillRect(0,0,UW,UH);ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='34px ui-monospace,Menlo,monospace';ctx.fillText('You fell apart on floor '+floor,UW/2,UH/2-10);ctx.font='18px ui-monospace,Menlo,monospace';ctx.fillText(kills+' kills — press R to try again',UW/2,UH/2+26)}
+}
+newGame();
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;if(!over)update(dt);render();requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>
