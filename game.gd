@@ -949,6 +949,8 @@ func enemy_drop(e: Dictionary) -> void:
 	if e.elite:
 		loot(e.x, e.z, true)
 		loot(e.x, e.z)
+	elif unarmed() and randf() < D.UNARMED_DROP and not items.any(func(i): return i.kind == "weapon"):
+		add_item({kind = "weapon", id = D.UNARMED_GUNS.pick_random()}, e.x, e.z)
 	# each floor hands out a fixed number of keys; the exit guardian drops whatever is left
 	var n := 0
 	if keys_left > 0:
@@ -961,6 +963,18 @@ func enemy_drop(e: Dictionary) -> void:
 		add_item({kind = "key"}, e.x + randf_range(-1, 1), e.z + randf_range(-1, 1))
 
 # ---------------- body ----------------
+# Bare hands only: at least one hand that could hold a weapon, and nothing to fight with but punches.
+func unarmed() -> bool:
+	var grip := false
+	for k in ["lh", "rh"]:
+		var h = P.parts[k]
+		if h == null:
+			continue
+		if h.held != null or not can_grip(h):
+			return false
+		grip = true
+	return grip
+
 func side_of(hand_slot: String) -> String:
 	return "L" if hand_slot == "lh" else "R"
 
@@ -1370,6 +1384,13 @@ func use_altar(side: String) -> void:
 	for s in (["le", "lr", "lh", "ll"] if side == "L" else ["re", "rr", "rh", "rl"]):
 		if P.parts[s] != null and P.parts[s].type == "flesh":
 			cands.append(s)
+	# never the last hand: without one you cannot open doors
+	var hs: String = D.SIDE[side].hand
+	if cands.has(hs) and P.parts["rh" if hs == "lh" else "lh"] == null:
+		cands.erase(hs)
+		if cands.is_empty():
+			say("The surgeon will not take your last hand.")
+			return
 	if cands.is_empty():
 		say("The surgeon wants flesh from your %s side. You have none there." % side_name(side))
 		return
@@ -1715,6 +1736,8 @@ func update(dt: float) -> void:
 				build_solid()
 				fx.append({k = "ring", x = b.x, z = b.z, r = 1.5, t = 0.2, life = 0.2, c = Color("a9762f")})
 	clamp_pos(P)
+	if enemies.is_empty() and not debug:
+		rescue_hand()  # no hands outside a fight (grenade, rot, trap): never leave the player stuck
 	if P.dash == null and enemies.is_empty() and pending_room == null:
 		for d in doors:  # opened doors can simply be walked through
 			if room.opened.get(d.dir, false) and d2(d, P) < 1.7 and dir.dot(Vector2(DIRS[d.dir])) > 0.5:
@@ -3380,6 +3403,44 @@ func smoke() -> void:
 			t_move = Vector2.ZERO
 			back_ok = room.idx == 0
 	print("walk back through opened door: %s" % back_ok)
+	# out of ammo: bare-handed kills drop a weapon often, armed kills never do
+	new_game()
+	var wd := [0, 0]
+	for armed in [0, 1]:
+		P.parts.rh.held = "pistol" if armed == 1 else null
+		for i in 200:
+			items.clear()
+			enemy_drop({type = "grunt", elite = false, x = 0.0, z = 0.0})
+			if items.any(func(i2): return i2.kind == "weapon"):
+				wd[armed] += 1
+	print("weapon drops per 200 kills - unarmed: %d (about 50), armed: %d (0)" % [wd[0], wd[1]])
+	# surgeon never takes the last hand; losing both hands in a quiet room brings a stray one
+	new_game()
+	enemies.clear()
+	P.parts.lh = null
+	P.parts.le = null
+	P.parts.lr = null
+	P.parts.ll = null
+	var last_ok := true
+	for i in 40:
+		altar = {x = P.x, z = P.z, used = false, m = null}
+		for k in ["re", "rr", "rl"]:
+			if P.parts[k] == null:
+				P.parts[k] = {type = "flesh"}
+		use_altar("R")
+		if P.parts.rh == null:
+			last_ok = false
+	P.parts.re = null
+	P.parts.rr = null
+	P.parts.rl = null
+	altar.used = false
+	use_altar("R")
+	print("surgeon leaves the last hand: %s (refused when only the hand is left: %s)" % [last_ok, P.parts.rh != null and not altar.used])
+	altar = null
+	items.clear()
+	lose_hand("rh")
+	update(0.016)
+	print("no hands in a quiet room -> stray hand appears: %s" % (items.any(func(i): return i.get("pk") in ["hand", "arm"])))
 	print("full run: won %s, floor %d, steps %d" % [won, floor_n, steps])
 	floor_n = 5
 	test_room("elite", 6)

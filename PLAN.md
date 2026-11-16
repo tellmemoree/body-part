@@ -93,7 +93,7 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
     brute still drops a fist on death
   - Missing limbs disappear from the enemy model
 - [x] Playtest fixes, round 1
-  - Ammo: guns have a magazine and a fixed total (pistol 8/48, SMG 30/120, shotgun 4/16,
+  - Ammo: guns have a magazine and a fixed total (pistol 8/80, SMG 30/120, shotgun 4/16,
     sniper 3/9, in `data.gd`). An empty magazine reloads by itself, R reloads early, missing
     fingers slow the reload; a gun with nothing left is thrown away. A dropped gun keeps its count.
     Knife, gun hand, wrist cannon and acid jaw are unlimited
@@ -104,6 +104,10 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
   - A missing hand is now obvious on the model: shorter arm with a red stump; flesh hands are wider
   - Tab: body and map screen (game stands still). Enlarged floor map with a legend, and one row
     per body slot saying what the part does or what its absence costs
+  - Out of ammo: while you have only bare hands, 25% of kills drop a pistol or knife
+    (`UNARMED_DROP`, `UNARMED_GUNS` in `data.gd`); armed kills still drop no weapons
+  - No more getting stuck without hands: the surgeon never takes your last hand, and whenever
+    you have no hands in a room without enemies a stray hand (or arm) appears on the floor
 - [x] Debug room (main menu > Debug room)
   - One large empty room with every part, weapon and pickup on the floor; anything taken comes
     straight back. Three chests: normal, locked, mimic

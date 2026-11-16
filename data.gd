@@ -161,8 +161,12 @@ const TIER_W_RARE := [3, 3, 2]
 
 # mag = shots per magazine, ammo = total shots in a fresh gun (first magazine included), reload = seconds.
 # A gun with nothing left is thrown away. The knife needs none.
+# With no weapon and no weapon-like hand, each kill has this chance to drop one of these.
+const UNARMED_DROP := 0.25
+const UNARMED_GUNS := ["pistol", "knife"]
+
 const GUNS := {
-	"pistol": {n = "pistol", hands = 1, fingers = 3, cd = 0.32, dmg = 1.0, spd = 30.0, spread = 0.03, len = 0.5, mag = 8, ammo = 48, reload = 0.9},
+	"pistol": {n = "pistol", hands = 1, fingers = 3, cd = 0.32, dmg = 1.0, spd = 30.0, spread = 0.03, len = 0.5, mag = 8, ammo = 80, reload = 0.9},
 	"smg": {n = "SMG", hands = 1, fingers = 4, cd = 0.085, dmg = 0.45, spd = 28.0, spread = 0.16, len = 0.7, mag = 30, ammo = 120, reload = 1.3},
 	"shotgun": {n = "shotgun", hands = 2, fingers = 2, cd = 0.75, dmg = 1.0, spd = 26.0, spread = 0.45, pellets = 6, recoil = 11.0, life = 0.45, len = 1.1, mag = 4, ammo = 16, reload = 1.6},
 	"sniper": {n = "sniper", hands = 2, fingers = 3, cd = 1.1, dmg = 5.0, spd = 70.0, spread = 0.0, pierce = true, len = 1.6, mag = 3, ammo = 9, reload = 1.8},
