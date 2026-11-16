@@ -106,6 +106,8 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
     per body slot saying what the part does or what its absence costs
   - Out of ammo: while you have only bare hands, 25% of kills drop a pistol or knife
     (`UNARMED_DROP`, `UNARMED_GUNS` in `data.gd`); armed kills still drop no weapons
+  - Door colour no longer gives away unknown rooms: a "?" door is plain grey; the room's colour
+    shows only when its name does (treasure, surgeon, exit, visited, or with a keyhole eye)
   - No more getting stuck without hands: the surgeon never takes your last hand, and whenever
     you have no hands in a room without enemies a stray hand (or arm) appears on the floor
 - [x] Debug room (main menu > Debug room)

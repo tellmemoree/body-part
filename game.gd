@@ -909,10 +909,12 @@ func descend() -> void:
 	next_floor()
 	say("Floor %d of %d." % [floor_n, FLOORS])
 
+# Whether the player can tell what a room is before entering: decides the door label and colour.
+func room_known(r: Dictionary) -> bool:
+	return r.visited or r.type in ["treasure", "surgeon", "exit", "start"] or has_type(["le", "re"], "keyhole")
+
 func room_label(r: Dictionary) -> String:
-	if r.visited or r.type in ["treasure", "surgeon", "exit", "start"] or has_type(["le", "re"], "keyhole"):
-		return D.ROOMS[r.type]
-	return "?"
+	return D.ROOMS[r.type] if room_known(r) else "?"
 
 # ---------------- loot ----------------
 func loot(x: float, z: float, rare := false) -> void:
@@ -2233,7 +2235,7 @@ func render() -> void:
 		var cs := 1.12 if c.flash > 0 else 1.0
 		c.m.scale = Vector3(cs, cs, cs)
 	for d in doors:
-		var col: String = D.DOOR_COLOR[d.to.type]
+		var col: String = D.DOOR_COLOR[d.to.type] if room_known(d.to) else D.DOOR_UNKNOWN
 		if not enemies.is_empty():
 			col = "661111"
 		elif room.opened.get(d.dir, false):

@@ -193,4 +193,5 @@ const ROOMS := {
 	"dark": "DARK - better loot",
 	"elite": "ELITE - big guy, big reward",
 }
+const DOOR_UNKNOWN := "707078"  # door to a room the player cannot identify yet ("?")
 const DOOR_COLOR := {"start": "55556a", "debug": "55556a", "exit": "dd3333", "fight": "3a8a5a", "treasure": "b9892f", "surgeon": "8a4a9a", "dark": "2a2a44", "elite": "aa5522"}
