@@ -817,15 +817,16 @@ func populate(r: Dictionary) -> void:
 		n_ch = 2
 	elif type == "dark" or type == "elite":
 		n_ch = 1
-	elif type == "fight" and randf() < 0.25:
+	elif type == "fight" and randf() < D.FIGHT_CHEST:
 		n_ch = 1
 	for i in n_ch:
 		var ct := "normal"
-		if type == "elite" or type == "dark":
+		var fi: int = clampi(floor_n, 1, D.LOCK_CHANCE.size()) - 1
+		if type == "elite" or (type == "dark" and randf() < D.DARK_LOCK[fi]):
 			ct = "locked"
 		elif df >= 3 and randf() < 0.22:
 			ct = "mimic"
-		elif randf() < 0.3:
+		elif randf() < D.LOCK_CHANCE[fi]:
 			ct = "locked"
 		var v := free_spot(4, 4)
 		chests.append({x = v.x, z = v.y, type = ct, open = false, gone = false, hp = D.CHEST_HP, flash = 0.0, m = null})
@@ -1208,9 +1209,17 @@ func interact(side: String) -> void:
 		return
 	var hs: String = D.SIDE[side].hand
 	var hand = P.parts[hs]
-	var it = nearest(items, reach())
-	if it != null:
-		take_item(it, side)
+	# nearest first; something this side cannot use does not block what lies under it
+	var near := items.filter(func(i): return d2(i, P) < reach())
+	near.sort_custom(func(a, b): return d2(a, P) < d2(b, P))
+	if not near.is_empty():
+		var why := ""
+		for it in near:
+			if take_item(it, side):
+				return
+			if why == "":
+				why = msg
+		say(why)
 		return
 	var closed := chests.filter(func(c): return not c.open)
 	var ch = nearest(closed, 2.8)
@@ -1233,24 +1242,24 @@ func interact(side: String) -> void:
 		else:
 			try_door(dr)
 
-func take_item(it: Dictionary, side: String) -> void:
+func take_item(it: Dictionary, side: String) -> bool:
 	var hs: String = D.SIDE[side].hand
 	var h = P.parts[hs]
 	if it.kind == "heart":
 		if P.parts.jaw == null:
 			say("No jaw to eat it with.")
-			return
+			return false
 		if P.hp >= max_hp():
 			say("Already at full health.")
-			return
+			return false
 		P.hp = mini(max_hp(), P.hp + (4 if has_org("stomach") else 2))
 	elif it.kind == "finger":
 		if h == null or not (h.type in ["flesh", "baby"]):
 			say("Fingers need a flesh hand on that side.")
-			return
+			return false
 		if h.fingers >= h.maxf:
 			say("That hand cannot take another finger. Try the other side.")
-			return
+			return false
 		h.fingers += 1
 		say("Finger reattached.")
 	elif it.kind == "key":
@@ -1272,31 +1281,32 @@ func take_item(it: Dictionary, side: String) -> void:
 				var hk = P.parts[k]
 				if not can_grip(hk) or not fingers_ok(hk, g):
 					say("The %s needs two gripping hands with %d+ fingers each." % [g.n, g.fingers])
-					return
+					return false
 			drop_held("lh")
 			drop_held("rh")
 			give_gun("lh", it.id, it.get("mag", -1), it.get("res", -1))
 		else:
 			if h == null:
 				say("No hand on that side. Try the other key.")
-				return
+				return false
 			if not can_grip(h):
 				say("A %s can't hold a weapon." % part_name("hand", h.type))
-				return
+				return false
 			if not fingers_ok(h, g):
 				say("The %s needs %d+ fingers." % [g.n, g.fingers])
-				return
+				return false
 			drop_held(hs)
 			give_gun(hs, it.id, it.get("mag", -1), it.get("res", -1))
 		say("Equipped %s." % g.n)
 	elif not attach(it, side):
-		return
+		return false
 	items = prune(items, func(i): return not is_same(i, it))
 	dirty = true
 	if debug and it.get("stock", false):  # debug room stock comes straight back
 		var again := it.duplicate()
 		again.m = null
 		add_item(again, it.sx, it.sz)
+	return true
 
 func open_chest(c: Dictionary, hs: String) -> void:
 	var h = P.parts[hs]
@@ -1337,8 +1347,6 @@ func open_chest(c: Dictionary, hs: String) -> void:
 
 func pop_chest(c: Dictionary) -> void:
 	c.open = true
-	if c.m != null:
-		c.m.get_child(1).visible = false
 	var bonus: bool = c.type == "locked" and not c.get("snipped", false)
 	loot(c.x, c.z, bonus)
 	if bonus:
@@ -1755,14 +1763,16 @@ func update(dt: float) -> void:
 			down = t_rmb or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 		var arm = P.parts[D.SIDE[side].arm]
 		var ck: String = "ch" + side
-		if arm != null and arm.type == "piston":  # hold to charge, release to hit
+		if piston_charges(side):  # hold to charge, release to hit
 			if down:
 				P[ck] = minf(1.0, P[ck] + dt)
 			elif P[ck] > 0:
 				act(side, P[ck])
 				P[ck] = 0.0
-		elif down:
-			act(side)
+		else:
+			P[ck] = 0.0
+			if down:
+				act(side)
 	if t_f or Input.is_physical_key_pressed(KEY_F):
 		jaw_act()
 	if P.laser <= 0 and has_type(["le", "re"], "laser") and not enemies.is_empty():
@@ -2184,7 +2194,7 @@ func mk_item(i: Dictionary) -> Node3D:
 
 func mk_chest(c: Dictionary) -> Node3D:
 	var locked: bool = c.type == "locked"
-	return grp([box(1.5, 0.7, 1.1, "777799" if locked else "a9762f", 0, 0.35, 0), box(1.6, 0.35, 1.2, "555577" if locked else "8a5a1f", 0, 0.85, 0)])
+	return grp([box(1.5, 0.7, 1.1, "777799" if locked else "a9762f", 0, 0.35, 0), box(1.6, 0.35, 1.2, "555577" if locked else "8a5a1f", 0, 0.85, 0), box(1.3, 0.04, 0.9, "08080a", 0, 0.71, 0)])
 
 func mk_bullet(b: Dictionary) -> Node3D:
 	var c := "ff66ff"
@@ -2234,6 +2244,10 @@ func render() -> void:
 	for c in chests:
 		var cs := 1.12 if c.flash > 0 else 1.0
 		c.m.scale = Vector3(cs, cs, cs)
+		var lid: Node3D = c.m.get_child(1)  # an opened chest: lid thrown back, dark and empty inside
+		lid.position = Vector3(0, 1.05, -0.75) if c.open else Vector3(0, 0.85, 0)
+		lid.rotation.x = 1.25 if c.open else 0.0
+		c.m.get_child(2).visible = c.open
 	for d in doors:
 		var col: String = D.DOOR_COLOR[d.to.type] if room_known(d.to) else D.DOOR_UNKNOWN
 		if not enemies.is_empty():
@@ -2592,6 +2606,18 @@ func arm_mod(arm: Dictionary) -> Dictionary:
 			m.spread = 0.12
 	return m
 
+# A piston arm charges punches and swings. A gun in that hand fires normally while held down.
+func piston_charges(side: String) -> bool:
+	var arm = P.parts[D.SIDE[side].arm]
+	if arm == null or arm.type != "piston":
+		return false
+	var h = P.parts[D.SIDE[side].hand]
+	if h == null:
+		return true
+	if h.type == "gunhand":
+		return false
+	return h.get("held") == null or D.GUNS[h.held].get("melee", false)
+
 # One hand's action. Returns its cooldown in seconds.
 func use_hand(h: Dictionary, s: String, side: String, arm: Dictionary, charge: float) -> float:
 	var a: float = P.aim
@@ -2926,6 +2952,13 @@ func _shot_setup() -> void:
 		P.keys = 2
 		add_item({kind = "scrap"}, 2, 3)
 		add_item({kind = "key"}, -2, 3)
+	if OS.get_cmdline_user_args().has("chests"):  # one closed and one opened chest of each kind, no enemies
+		enemies.clear()
+		chests.clear()
+		var cx := -6.0
+		for ct in ["normal", "normal", "locked", "locked"]:
+			chests.append({x = cx, z = 2.0, type = ct, open = cx == -2.0 or cx == 6.0, gone = false, hp = D.CHEST_HP, flash = 0.0, m = null})
+			cx += 4.0
 	if OS.get_cmdline_user_args().has("stump"):  # right hand gone, left arm gone
 		drop_held("rh")
 		P.parts.rh = null
@@ -3416,6 +3449,38 @@ func smoke() -> void:
 			if items.any(func(i2): return i2.kind == "weapon"):
 				wd[armed] += 1
 	print("weapon drops per 200 kills - unarmed: %d (about 50), armed: %d (0)" % [wd[0], wd[1]])
+	# piston arm: a gun fires while held, a bare hand still charges
+	new_game()
+	P.parts.ra = {type = "piston", hand2 = null}
+	give_gun("rh", "smg")
+	var smg_ok: bool = not piston_charges("R")
+	drop_held("rh")
+	items.clear()
+	print("piston arm: smg fires normally %s, bare hand charges %s" % [smg_ok, piston_charges("R")])
+	# a finger that cannot be used does not block the pistol under it
+	new_game()
+	drop_held("rh")
+	items.clear()
+	add_item({kind = "finger"}, P.x, P.z)
+	add_item({kind = "weapon", id = "pistol"}, P.x + 0.3, P.z)
+	interact("R")
+	print("pistol under a useless finger: picked up %s, finger left %s" % [P.parts.rh.held == "pistol", items.size() == 1 and items[0].kind == "finger"])
+	# chest mix per floor
+	for fl in [1, 5]:
+		var cnt := {normal = 0, locked = 0, mimic = 0}
+		floor_n = 0
+		for i in fl:
+			next_floor()
+		for i in 30:
+			gen_floor()
+			for r in rooms:
+				chests.clear()
+				enemies.clear()
+				room = r
+				populate(r)
+				for c in chests:
+					cnt[c.type] += 1
+		print("floor %d chests per floor: normal %.1f, locked %.1f, mimic %.1f" % [fl, cnt.normal / 30.0, cnt.locked / 30.0, cnt.mimic / 30.0])
 	# surgeon never takes the last hand; losing both hands in a quiet room brings a stray one
 	new_game()
 	enemies.clear()

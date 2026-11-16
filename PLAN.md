@@ -110,6 +110,14 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
     shows only when its name does (treasure, surgeon, exit, visited, or with a keyhole eye)
   - No more getting stuck without hands: the surgeon never takes your last hand, and whenever
     you have no hands in a room without enemies a stray hand (or arm) appears on the floor
+- [x] Playtest fixes, round 2
+  - Piston arm only charges punches and melee swings; a gun (or gun hand) on it fires normally
+  - Q / E takes the nearest thing that side can use, so a finger you cannot attach no longer
+    blocks the weapon lying under it
+  - Fewer locked chests early: ordinary chests are locked 10% on floor 1 rising to 35% on floor 5
+    (`LOCK_CHANCE`), dark room chests 30% rising to 100% (`DARK_LOCK`), elite rooms always.
+    Fight rooms have a chest 35% of the time (`FIGHT_CHEST`, was 25%)
+  - Opened chests stay visibly open (lid thrown back, black inside), also after leaving the room
 - [x] Debug room (main menu > Debug room)
   - One large empty room with every part, weapon and pickup on the floor; anything taken comes
     straight back. Three chests: normal, locked, mimic
@@ -172,5 +180,5 @@ _Add what feels off here after each session._
 
 - Play: open the project in Godot, press F5.
 - Mechanics test: `Godot --headless --path . -- --smoke`
-- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump] [pillars|corners|vbars|hbars|crates]`
+- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump|chests] [pillars|corners|vbars|hbars|crates]`
 - Content tables (parts, guns, enemies, rooms) are in `data.gd`.

@@ -27,7 +27,7 @@ const TYPES := {
 		"flesh": {n = "arm", c = "e9a98c", t = 1},
 		"robot": {n = "robot arm", c = "5fb4e0", t = 1, tip = "no recoil, stronger knockback"},
 		"long": {n = "long arm", c = "d9b99c", t = 1, tip = "more melee reach, picks things up from further away"},
-		"piston": {n = "piston arm", c = "b0b0c0", t = 2, tip = "hold the click to charge a heavy hit"},
+		"piston": {n = "piston arm", c = "b0b0c0", t = 2, tip = "hold the click to charge a heavy punch or swing; guns fire normally"},
 		"noodle": {n = "noodle arm", c = "f0d080", t = 2, tip = "huge reach, weak hits, shaky aim"},
 		"forked": {n = "forked arm", c = "a070c0", t = 3, tip = "takes a second, artificial hand; one click uses both"},
 		"boomerang": {n = "boomerang arm", c = "c08a3a", t = 2, tip = "click throws the whole arm; it comes back with its hand"},
@@ -193,5 +193,10 @@ const ROOMS := {
 	"dark": "DARK - better loot",
 	"elite": "ELITE - big guy, big reward",
 }
+# Chests. Chance per floor (1-5) that an ordinary chest / a dark room's chest is locked; elite rooms always are.
+const LOCK_CHANCE := [0.1, 0.2, 0.3, 0.3, 0.35]
+const DARK_LOCK := [0.3, 0.5, 0.7, 0.85, 1.0]
+const FIGHT_CHEST := 0.35  # chance that a fight room has a chest
+
 const DOOR_UNKNOWN := "707078"  # door to a room the player cannot identify yet ("?")
 const DOOR_COLOR := {"start": "55556a", "debug": "55556a", "exit": "dd3333", "fight": "3a8a5a", "treasure": "b9892f", "surgeon": "8a4a9a", "dark": "2a2a44", "elite": "aa5522"}
