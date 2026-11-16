@@ -123,6 +123,9 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
 - [ ] More room variety: hand-made room templates, pits, destructible cover, props
 - [ ] Ranged enemies should check line of sight before shooting; melee and hook reach through
       walls and should not
+- [ ] Door collision (from playtest, screenshot of a side door): the door block sticks out of the
+      wall at an angle and the player can stand inside it. Doors need to sit flush in the wall
+      and block the player like walls do until they are opened
 - [ ] Seamless floors: corridors between rooms and a scrolling camera, instead of the current
       one-room-per-screen transitions
 - [ ] Real bosses, one per floor, replacing the elite brute guardian
