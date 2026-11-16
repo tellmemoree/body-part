@@ -47,8 +47,9 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
     crate leg (slow, Space = stomp shockwave),
     keyhole eye (reveals mimics and what is behind every door)
   - Robot fist punch or robot-leg dash on a chest is 50/50: opens with loot, or destroyed for scrap
-  - Locked chests need a key; keys drop from 8% of kills and always from elites and mimics.
-    With no key, a flesh hand can still pay a finger
+  - Locked chests need a key. Every floor gives out exactly 1-2 keys (`KEYS_PER_FLOOR`): 4% of
+    kills and every elite drop one until the floor's keys are used up, and the exit guardian drops
+    whatever is left. Mimics drop no key. With no key, a flesh hand can still pay a finger
   - Two treasure rooms per floor, so there are enough chests to collect scrap
 
 - [x] Expanded body: 15 slots, 81 parts (all in `data.gd`, each tagged with a tier for rarity later)
@@ -91,6 +92,18 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
     (with hand) or leg, slasher claw, leaper spring leg, brute fist, spitter eye. Only an elite
     brute still drops a fist on death
   - Missing limbs disappear from the enemy model
+- [x] Playtest fixes, round 1
+  - Ammo: guns have a magazine and a fixed total (pistol 8/48, SMG 30/120, shotgun 4/16,
+    sniper 3/9, in `data.gd`). An empty magazine reloads by itself, R reloads early, missing
+    fingers slow the reload; a gun with nothing left is thrown away. A dropped gun keeps its count.
+    Knife, gun hand, wrist cannon and acid jaw are unlimited
+  - One leg: Space only works if that leg can move you alone (`ONE_LEG` in `data.gd`). Wheel,
+    rocket, spring and frog work at half strength; ghost, bomb and crate are unchanged; flesh,
+    squeaky, robot and bird do nothing
+  - A killed mimic drops exactly one thing: a weapon or part (50%) or one scrap
+  - A missing hand is now obvious on the model: shorter arm with a red stump; flesh hands are wider
+  - Tab: body and map screen (game stands still). Enlarged floor map with a legend, and one row
+    per body slot saying what the part does or what its absence costs
 - [x] Debug room (main menu > Debug room)
   - One large empty room with every part, weapon and pickup on the floor; anything taken comes
     straight back. Three chests: normal, locked, mimic
@@ -104,7 +117,7 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
   - Rarity is visible on the chest (for example wood, steel, gold); odds improve on deeper floors
   - To decide: loot table per tier; whether rarer chests give more scrap when destroyed;
     how locks and mimics relate to rarity (for example legendary always locked, mimics copy any tier)
-  - Tuning left open: key drop rate (`KEY_DROP`), scrap per part (`SCRAP_NEEDED`),
+  - Tuning left open: keys per floor (`KEYS_PER_FLOOR`, `KEY_CHANCE`), ammo per gun (`GUNS`), scrap per part (`SCRAP_NEEDED`),
     chest hit points (`CHEST_HP`), all in `data.gd`; more quirky parts
 - [ ] Game feel and gore: hit reactions, screen shake, limbs physically flying off, blood
 - [ ] More room variety: hand-made room templates, pits, destructible cover, props
@@ -150,5 +163,5 @@ _Add what feels off here after each session._
 
 - Play: open the project in Godot, press F5.
 - Mechanics test: `Godot --headless --path . -- --smoke`
-- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|quirky|debug] [pillars|corners|vbars|hbars|crates]`
+- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump] [pillars|corners|vbars|hbars|crates]`
 - Content tables (parts, guns, enemies, rooms) are in `data.gd`.

@@ -44,8 +44,9 @@ var ff_w := 0
 var ff_h := 0
 var ff_t := 0.0
 var stairs = null
+var keys_left := 0  # keys this floor will still give out
 var won := false
-var state := "menu"  # "menu" (main menu), "play", "paused"
+var state := "menu"  # "menu" (main menu), "play", "paused", "info" (Tab screen)
 var menu
 # test hooks
 var t_aim = null
@@ -149,6 +150,11 @@ func _ready() -> void:
 			to_main_menu()
 		elif args.has("pause"):
 			toggle_pause()
+		elif args.has("info"):  # the Tab screen, opened through the real key path
+			var ev := InputEventKey.new()
+			ev.physical_keycode = KEY_TAB
+			ev.pressed = true
+			Input.parse_input_event(ev)
 	else:
 		to_main_menu()
 
@@ -168,6 +174,13 @@ func toggle_pause() -> void:
 		menu.open("pause")
 	elif state == "paused":
 		resume()
+
+# Tab: body and map screen. The game stands still while it is open.
+func toggle_info() -> void:
+	if state == "play" and not over:
+		state = "info"
+	elif state == "info":
+		state = "play"
 
 func resume() -> void:
 	state = "play"
@@ -228,7 +241,13 @@ func _build_world() -> void:
 func _unhandled_input(ev: InputEvent) -> void:
 	if ev is InputEventKey and ev.pressed and not ev.echo:
 		if ev.physical_keycode == KEY_ESCAPE:
-			toggle_pause()
+			if state == "info":
+				state = "play"
+			else:
+				toggle_pause()
+			return
+		if ev.physical_keycode == KEY_TAB:
+			toggle_info()
 			return
 		if state != "play":
 			return
@@ -247,6 +266,8 @@ func _unhandled_input(ev: InputEvent) -> void:
 						start_debug()
 					else:
 						new_game()
+				else:
+					reload_all()
 
 func _process(dt: float) -> void:
 	dt = minf(dt, 0.05)
@@ -300,6 +321,8 @@ func legs() -> Array:
 
 func leg_move() -> String:
 	var ts := legs().map(func(l): return l.type)
+	if ts.size() == 1 and not D.ONE_LEG.has(ts[0]):
+		return ""  # this leg cannot do its move alone
 	if ts.has("spring") and ts.has("rocket"):
 		return "rocketleap"
 	for t in ["bomb", "ghost", "rocket", "bird", "frog", "spring", "crate", "robot", "flesh", "squeaky", "wheel"]:
@@ -392,6 +415,8 @@ func hand_label(s: String) -> String:
 	if can_grip(h):
 		if h.held != null:
 			t = D.GUNS[h.held].n
+			if D.GUNS[h.held].has("mag"):
+				t = "reloading" if P["rl" + side_of(s)] > 0 else "%s %d/%d" % [t, h.mag, h.res]
 		elif h.type == "flesh":
 			t = "jab"
 	if arm.hand2 != null:
@@ -411,7 +436,7 @@ func new_game() -> void:
 		x = 0.0, z = AH - 2, y = 0.0, hp = 6, scrap = 0, keys = 0, inv = 0.0, cdL = 0.0, cdR = 0.0, cdSp = 0.0, cdJ = 0.0,
 		dash = null, kx = 0.0, kz = 0.0, vx = 0.0, vz = 0.0, aim = -PI / 2,
 		chL = 0.0, chR = 0.0, shL = 0.0, shR = 0.0, bashL = 0.0, bashR = 0.0,
-		frog = 0.0, still = 0.0, drain = 0.0, frenzy = 0.0, laser = 3.0, plate = false, regrow = true,
+		rlL = 0.0, rlR = 0.0, frog = 0.0, still = 0.0, drain = 0.0, frenzy = 0.0, laser = 3.0, plate = false, regrow = true,
 		parts = {
 			le = {type = "flesh"}, re = {type = "flesh"}, lr = {type = "flesh"}, rr = {type = "flesh"},
 			jaw = {type = "flesh"}, skin = {type = "flesh"},
@@ -420,7 +445,7 @@ func new_game() -> void:
 			ll = {type = "flesh"}, rl = {type = "flesh"}, o1 = null, o2 = null, o3 = null,
 		},
 	}
-	P.parts.rh.held = "pistol"
+	give_gun("rh", "pistol")
 	floor_n = 0
 	debug = false
 	god = false
@@ -610,6 +635,7 @@ func link_rooms(a: Dictionary, b: Dictionary, dir: String) -> void:
 
 func gen_floor() -> void:
 	rooms = []
+	keys_left = randi_range(D.KEYS_PER_FLOOR[0], D.KEYS_PER_FLOOR[1])
 	var cells := {}
 	var n := randi_range(10, 15)
 	rooms.append(make_room("start"))
@@ -907,6 +933,12 @@ func loot(x: float, z: float, rare := false) -> void:
 
 func enemy_drop(e: Dictionary) -> void:
 	kills += 1
+	if e.type == "mimic":  # exactly one thing: a weapon or part, or just scrap
+		if randf() < 0.5:
+			loot(e.x, e.z, true)
+		else:
+			add_item({kind = "scrap"}, e.x, e.z)
+		return
 	# parts now come off enemies while they are alive (see sever_enemy); only an elite brute still drops one on death
 	if e.type == "brute" and e.elite:
 		add_item({kind = "part", pk = "hand", type = "fist"}, e.x, e.z)
@@ -914,25 +946,101 @@ func enemy_drop(e: Dictionary) -> void:
 		add_item({kind = "heart"}, e.x, e.z)
 	elif randf() < 0.06:
 		add_item({kind = "finger"}, e.x, e.z)
-	if e.type == "mimic" or e.elite:
+	if e.elite:
 		loot(e.x, e.z, true)
 		loot(e.x, e.z)
-	if e.type == "mimic" or e.elite or randf() < D.KEY_DROP:
+	# each floor hands out a fixed number of keys; the exit guardian drops whatever is left
+	var n := 0
+	if keys_left > 0:
+		if e.elite and room.get("type", "") == "exit":
+			n = keys_left
+		elif e.elite or randf() < D.KEY_CHANCE:
+			n = 1
+	keys_left -= n
+	for i in n:
 		add_item({kind = "key"}, e.x + randf_range(-1, 1), e.z + randf_range(-1, 1))
 
 # ---------------- body ----------------
+func side_of(hand_slot: String) -> String:
+	return "L" if hand_slot == "lh" else "R"
+
+# The hand slots holding the weapon in slot s: both for a two-handed gun.
+func gun_slots(s: String) -> Array:
+	var h = P.parts[s]
+	if h != null and h.held != null and D.GUNS[h.held].hands == 2:
+		return ["lh", "rh"]
+	return [s]
+
+# Puts a weapon in a hand (both hands if it is two-handed). mag / res < 0 means a fresh, full gun.
+func give_gun(s: String, id: String, mag := -1, res := -1) -> void:
+	var g = D.GUNS[id]
+	if mag < 0:
+		mag = g.get("mag", 0)
+		res = g.get("ammo", 0) - mag
+	for k in (["lh", "rh"] if g.hands == 2 else [s]):
+		P.parts[k].held = id
+		P.parts[k].mag = mag
+		P.parts[k].res = res
+
+# Missing fingers make the trigger and the reload slower.
+func finger_slow(h: Dictionary) -> float:
+	return 1.0 + (5 - h.fingers) * 0.15 if h.type in ["flesh", "rotting"] else 1.0
+
+func start_reload(s: String) -> bool:
+	var h = P.parts[s]
+	if h == null or h.held == null or P["rl" + side_of(s)] > 0:
+		return false
+	var g = D.GUNS[h.held]
+	if not g.has("mag") or h.mag >= g.mag or h.res <= 0:
+		return false
+	for k in gun_slots(s):
+		P["rl" + side_of(k)] = g.reload * finger_slow(h) / haste()
+	return true
+
+func finish_reload(s: String) -> void:
+	var h = P.parts[s]
+	if h == null or h.held == null or not D.GUNS[h.held].has("mag"):
+		return
+	var n: int = mini(D.GUNS[h.held].mag - h.mag, h.res)
+	h.mag += n
+	h.res -= n
+
+# One shot leaves the magazine. An empty magazine reloads by itself; a gun with nothing left is thrown away.
+func spend_shot(s: String) -> void:
+	var h = P.parts[s]
+	var g = D.GUNS[h.held]
+	var slots := gun_slots(s)
+	for k in slots:
+		P.parts[k].mag -= 1
+	if h.mag > 0:
+		return
+	if h.res > 0:
+		start_reload(s)
+		return
+	for k in slots:
+		P.parts[k].held = null
+	say("The %s is empty. You toss it." % g.n)
+	dirty = true
+
 func drop_held(s: String) -> void:
 	var h = P.parts[s]
 	if h == null or h.get("held") == null:
 		return
 	var id: String = h.held
+	var it := {kind = "weapon", id = id}
+	if D.GUNS[id].has("mag"):  # a dropped gun keeps its count
+		it.mag = h.mag
+		it.res = h.res
 	if D.GUNS[id].hands == 2:
 		for k in ["lh", "rh"]:
 			if P.parts[k] != null and P.parts[k].held == id:
 				P.parts[k].held = null
+		P.rlL = 0.0
+		P.rlR = 0.0
 	else:
 		h.held = null
-	add_item({kind = "weapon", id = id}, P.x + randf_range(-1.5, 1.5), P.z + randf_range(-1.5, 1.5))
+		P["rl" + side_of(s)] = 0.0
+	add_item(it, P.x + randf_range(-1.5, 1.5), P.z + randf_range(-1.5, 1.5))
 	dirty = true
 
 func check_grip() -> void:
@@ -1151,8 +1259,7 @@ func take_item(it: Dictionary, side: String) -> void:
 					return
 			drop_held("lh")
 			drop_held("rh")
-			P.parts.lh.held = it.id
-			P.parts.rh.held = it.id
+			give_gun("lh", it.id, it.get("mag", -1), it.get("res", -1))
 		else:
 			if h == null:
 				say("No hand on that side. Try the other key.")
@@ -1164,7 +1271,7 @@ func take_item(it: Dictionary, side: String) -> void:
 				say("The %s needs %d+ fingers." % [g.n, g.fingers])
 				return
 			drop_held(hs)
-			h.held = it.id
+			give_gun(hs, it.id, it.get("mag", -1), it.get("res", -1))
 		say("Equipped %s." % g.n)
 	elif not attach(it, side):
 		return
@@ -1408,7 +1515,7 @@ func act(side: String, charge := 0.0) -> void:
 		if msg_t <= 0:
 			say("No %s %s!" % [side_name(side), "arm" if arm == null else "hand"], 1.5)
 		return
-	if arm.out or P[ck] > 0 or P.dash != null:
+	if arm.out or P[ck] > 0 or P.dash != null or P["rl" + side] > 0:
 		return
 	P.still = 0.0
 	if arm.type == "boomerang":
@@ -1419,6 +1526,13 @@ func act(side: String, charge := 0.0) -> void:
 	if arm.hand2 != null:
 		cd = maxf(cd, use_hand(arm.hand2, s, side, arm, charge))
 	P[ck] = maxf(P[ck], cd / haste())
+
+# R: reload every gun whose magazine is not full.
+func reload_all() -> void:
+	if over or P.is_empty():
+		return
+	for s in ["lh", "rh"]:
+		start_reload(s)
 
 func move_input() -> Vector2:
 	if t_move != null:
@@ -1436,7 +1550,7 @@ func ability() -> void:
 		return
 	var t := leg_move()
 	if t == "":
-		say("These legs cannot dodge.")
+		say("You cannot roll on one leg." if L.size() == 1 else "These legs cannot dodge.")
 		return
 	P.still = 0.0
 	var lung := 0.6 if has_org("lungs") else 1.0
@@ -1451,7 +1565,7 @@ func ability() -> void:
 	if dir == Vector2.ZERO:
 		dir = Vector2(cos(P.aim), sin(P.aim))
 	dir = dir.normalized()
-	var one := 0.65 if L.size() == 1 else 1.0
+	var one: float = D.ONE_LEG[t] if L.size() == 1 else 1.0
 	var cd := 1.0
 	match t:
 		"bomb":
@@ -1476,7 +1590,7 @@ func ability() -> void:
 			P.dash = {t = 0.35 * far, dur = 0.35 * far, vx = dir.x * 45 * one, vz = dir.y * 45 * one, type = "rocket", hits = []}
 			cd = 1.4
 		"bird":
-			P.dash = {t = 0.9, dur = 0.9, vx = dir.x * 14, vz = dir.y * 14, type = "bird", fly = true, h = 2.4, hits = []}
+			P.dash = {t = 0.9, dur = 0.9, vx = dir.x * 14 * one, vz = dir.y * 14 * one, type = "bird", fly = true, h = 2.4, hits = []}
 			cd = 1.6
 		"ghost":
 			P.dash = {t = 0.35, dur = 0.35, vx = dir.x * 30, vz = dir.y * 30, type = "ghost", fly = true, hits = []}
@@ -1560,7 +1674,7 @@ func update(dt: float) -> void:
 			else:  # released: the longer the charge, the further the hop
 				var c: float = P.frog
 				P.frog = 0.0
-				var dist := 4.0 + 10.0 * c
+				var dist := (4.0 + 10.0 * c) * (D.ONE_LEG.frog if L.size() == 1 else 1.0)
 				P.dash = {t = 0.45, dur = 0.45, vx = cos(P.aim) * dist / 0.45, vz = sin(P.aim) * dist / 0.45, type = "frog", fly = true, h = 2.0 + 2.0 * c, boom = [2.5 + 1.5 * c, 1.0 + 2.0 * c], hits = []}
 				P.cdSp = (0.6 if has_org("lungs") else 1.0) / haste()
 		var sp := 9.0 * haste()
@@ -1607,6 +1721,10 @@ func update(dt: float) -> void:
 				pending_room = d
 	# hands and jaw
 	for side in ["L", "R"]:
+		if P["rl" + side] > 0:
+			P["rl" + side] -= dt
+			if P["rl" + side] <= 0:
+				finish_reload(D.SIDE[side].hand)
 		var down: bool = t_lmb or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		if side == "R":
 			down = t_rmb or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
@@ -1919,14 +2037,16 @@ func build_player() -> void:
 			ln = 1.3
 		elif arm.type == "noodle":
 			ln = 1.8
+		if h == null:
+			ln *= 0.55  # no hand: a clearly shorter arm that ends in a raw stump
 		pg.add_child(box(0.14 if arm.type == "noodle" else 0.22, 0.22, ln, flesh if arm.type == "flesh" else D.TYPES.arm[arm.type].c, x, 1.6, ln / 2 - 0.1))
 		var tip := ln - 0.1
 		if h == null:
-			pg.add_child(box(0.2, 0.2, 0.1, "882222", x, 1.6, tip))
+			pg.add_child(box(0.28, 0.28, 0.08, "e01818", x, 1.6, tip))
 			continue
-		add_hand(h, x, tip, not two)
+		add_hand(h, x, tip, not two, sx[1])
 		if arm.hand2 != null:
-			add_hand(arm.hand2, x + (0.42 if x > 0 else -0.42), tip - 0.15, false)
+			add_hand(arm.hand2, x + (0.42 if x > 0 else -0.42), tip - 0.15, false, sx[1] + "2")
 	if two:
 		var g = D.GUNS[p.lh.held]
 		pg.add_child(box(0.16, 0.22, g.len, "222222", 0, 1.6, 0.9 + g.len / 2))
@@ -2175,7 +2295,7 @@ func new_hand(type: String, fingers := -1) -> Dictionary:
 		f = top
 		if fingers >= 0 and type != "skeleton":
 			f = mini(top, fingers)
-	return {type = type, fingers = f, maxf = top, held = null}
+	return {type = type, fingers = f, maxf = top, held = null, mag = 0, res = 0}
 
 func new_part(kind: String, type: String) -> Dictionary:
 	if kind == "hand":
@@ -2208,7 +2328,8 @@ func feed(amount: float) -> void:
 
 func item_name(i: Dictionary) -> String:
 	if i.kind == "weapon":
-		return D.GUNS[i.id].n
+		var g = D.GUNS[i.id]
+		return "%s (%d)" % [g.n, i.get("mag", 0) + i.get("res", g.ammo)] if g.has("mag") else g.n
 	if i.kind != "part":
 		return i.kind
 	var n: String = part_name(i.pk, i.type)
@@ -2217,6 +2338,47 @@ func item_name(i: Dictionary) -> String:
 	if i.pk == "arm" and i.get("hand") != null:
 		n += " + " + part_name("hand", i.hand.type)
 	return n
+
+# Tab screen: [name, what it does or what its absence costs, colour] for one body slot.
+func part_info(s: String) -> Array:
+	var kind: String = D.SLOT[s][0]
+	var p = P.parts[s]
+	if p == null:
+		if kind == "organ":
+			return ["none", D.MISSING_TIP.organ, Color("666666")]
+		var why: String = D.MISSING_TIP[kind]
+		if kind == "hand" and P.parts[arm_of(s)] == null:
+			why = "gone with the arm"
+		return ["MISSING", why, Color("ee4444")]
+	var n: String = part_name(kind, p.type)
+	var txt: String = D.TYPES[kind][p.type].get("tip", D.BASE_TIP.get(kind, ""))
+	var col := Color("d8b8a8") if p.type == "flesh" else Color(D.TYPES[kind][p.type].c).lightened(0.25)
+	if kind == "hand":
+		if p.type in ["flesh", "baby", "rotting"]:
+			n += ", %d finger%s" % [p.fingers, "" if p.fingers == 1 else "s"]
+			if finger_slow(p) > 1.0:
+				txt += "  |  %d%% slower trigger and reload" % roundi((finger_slow(p) - 1.0) * 100)
+		if p.held != null:
+			var g = D.GUNS[p.held]
+			txt += "  |  holding %s" % g.n
+			if g.has("mag"):
+				txt += ": %d in the magazine, %d spare (R reloads, thrown away when empty)" % [p.mag, p.res]
+		var arm = P.parts[arm_of(s)]
+		if arm != null and arm.hand2 != null:
+			txt += "  |  second hand: %s - %s" % [part_name("hand", arm.hand2.type), D.TYPES.hand[arm.hand2.type].get("tip", "")]
+	elif kind == "arm" and p.out:
+		n += " (thrown)"
+	elif kind == "leg" and legs().size() == 1:
+		var f: float = D.ONE_LEG.get(p.type, 0.0)
+		if p.type in ["peg", "tread", "stilt", "tentacle"]:
+			txt += "  |  your only leg"
+		elif f <= 0:
+			txt += "  |  your only leg: SPACE does not work"
+		elif f < 1:
+			txt += "  |  your only leg: SPACE at half strength"
+		else:
+			txt += "  |  your only leg: SPACE still works"
+	return [n, txt, col]
 
 func jaw_label() -> String:
 	var j = P.parts.jaw
@@ -2423,13 +2585,17 @@ func use_hand(h: Dictionary, s: String, side: String, arm: Dictionary, charge: f
 				melee(a, 1.9 + rng, 0.9, 1 * m, 3 * kbm)
 				return 0.4 * fast
 			var g = D.GUNS[h.held]
-			var slow: float = 1.0 + (5 - h.fingers) * 0.15 if h.type in ["flesh", "rotting"] else 1.0
+			var slow := finger_slow(h)
 			if g.get("melee", false):
 				melee(a, g.range + rng, g.arc, g.dmg * m, 4 * kbm, {sv = 2.0})
 				return g.cd * slow * fast
+			if h.mag <= 0:  # only happens if a reload was interrupted
+				start_reload(s)
+				return 0.1
 			var gg: Dictionary = g.duplicate()
 			gg.dmg = g.dmg * m
 			shoot(a, gg, {}, am.spread + (0.1 if h.type == "baby" else 0.0))
+			spend_shot(s)
 			if g.hands == 2:
 				P.cdL = g.cd * slow / haste()
 				P.cdR = P.cdL
@@ -2557,11 +2723,12 @@ func jaw_act() -> void:
 	P.cdJ /= haste()
 
 # Adds one hand's shape at the end of an arm (x = side offset, z = arm tip).
-func add_hand(h: Dictionary, x: float, z: float, show_gun: bool) -> void:
+func add_hand(h: Dictionary, x: float, z: float, show_gun: bool, slot := "") -> void:
 	var c: String = D.TYPES.hand[h.type].c
+	var first := pg.get_child_count()
 	match h.type:
 		"flesh", "baby", "rotting", "skeleton":
-			var s := 0.16 if h.type == "baby" else 0.24
+			var s := 0.2 if h.type == "baby" else 0.32  # wider than the arm, so a hand reads as a hand
 			pg.add_child(box(s, s, 0.1 + 0.04 * h.fingers, "f3c4a8" if h.type == "flesh" else c, x, 1.6, z + 0.1))
 		"fist":
 			pg.add_child(box(0.5, 0.5, 0.55, c, x, 1.6, z + 0.2))
@@ -2596,6 +2763,8 @@ func add_hand(h: Dictionary, x: float, z: float, show_gun: bool) -> void:
 		var g = D.GUNS[h.held]
 		var is_melee: bool = g.get("melee", false)
 		pg.add_child(box(0.12, 0.06 if is_melee else 0.2, g.len, "dddddd" if is_melee else "222222", x, 1.62, z + 0.2 + g.len / 2))
+	for i in range(first, pg.get_child_count()):  # lets the smoke test check that a lost hand is gone from the model
+		pg.get_child(i).set_meta("hand", slot)
 
 func mk_flyer(_f: Dictionary) -> Node3D:
 	return grp([box(0.22, 0.22, 1.2, "c08a3a", 0, 1.4, 0)])
@@ -2669,7 +2838,7 @@ func reset_body() -> void:
 		lh = new_hand("flesh"), rh = new_hand("flesh"),
 		ll = {type = "flesh"}, rl = {type = "flesh"}, o1 = null, o2 = null, o3 = null,
 	}
-	P.parts.rh.held = "pistol"
+	give_gun("rh", "pistol")
 	P.plate = false
 	P.hp = max_hp()
 	dirty = true
@@ -2732,6 +2901,11 @@ func _shot_setup() -> void:
 		P.keys = 2
 		add_item({kind = "scrap"}, 2, 3)
 		add_item({kind = "key"}, -2, 3)
+	if OS.get_cmdline_user_args().has("stump"):  # right hand gone, left arm gone
+		drop_held("rh")
+		P.parts.rh = null
+		P.parts.lh = null
+		P.parts.la = null
 	dirty = true
 	spawn("brute")
 	spawn("leaper")
@@ -2954,13 +3128,156 @@ func smoke() -> void:
 	print("locked chest: refused without key %s, opened with key %s, keys left %d" % [refused, lc.open, P.keys])
 	chests = []
 	items = []
-	for i in 2000:
-		enemy_drop({type = "slasher", elite = false, x = 0.0, z = 0.0})
-	var key_n := items.filter(func(i): return i.kind == "key").size()
+	var is_key := func(i): return i.kind == "key"
+	var per_floor := []
+	for f in 20:  # every floor gives 1-2 keys, however many things die on it
+		gen_floor()
+		items = []
+		room = {type = "fight"}
+		for i in 300:
+			enemy_drop({type = "slasher", elite = false, x = 0.0, z = 0.0})
+		enemy_drop({type = "brute", elite = true, x = 0.0, z = 0.0})
+		room = {type = "exit"}
+		enemy_drop({type = "brute", elite = true, x = 0.0, z = 0.0})
+		per_floor.append(items.filter(is_key).size())
+	gen_floor()
 	items = []
+	room = {type = "exit"}
 	enemy_drop({type = "brute", elite = true, x = 0.0, z = 0.0})
-	print("key drops: %.1f%% over 2000 kills, elite drops key %s" % [key_n / 20.0, items.any(func(i): return i.kind == "key")])
+	var guardian: int = items.filter(is_key).size()
+	print("keys per floor over 20 floors: min %d, max %d; exit guardian alone gives %d (1-2)" % [per_floor.min(), per_floor.max(), guardian])
+	var mimic_ok := true
+	var m_scrap := 0
+	for i in 200:
+		keys_left = 2
+		items = []
+		enemy_drop({type = "mimic", elite = false, x = 0.0, z = 0.0})
+		if items.size() != 1 or items[0].kind == "key" or items[0].kind == "heart" or items[0].kind == "finger":
+			mimic_ok = false
+		if items[0].kind == "scrap":
+			m_scrap += 1
+	print("mimic drops exactly one item or scrap, never a key: %s (scrap %d / 200)" % [mimic_ok, m_scrap])
 	items = []
+	new_game()
+	test_room("fight")
+	enemies = prune(enemies, func(_e): return false)
+	# ammo: magazine, reload, thrown away when empty, a dropped gun keeps its count
+	var gh = P.parts.rh
+	t_aim = Vector2(0, -50)
+	var fired := 0
+	var reloads := 0
+	var was_rl := false
+	t_rmb = true
+	for i in 6000:
+		if gh.held == null:
+			break
+		var before: int = gh.mag + gh.res
+		_run(1)
+		if gh.held == null or gh.mag + gh.res < before:
+			fired += 1
+		if P.rlR > 0 and not was_rl:
+			reloads += 1
+		was_rl = P.rlR > 0
+	t_rmb = false
+	print("pistol: fired %d of %d, reloads %d, tossed when empty %s, label '%s'" % [fired, D.GUNS.pistol.ammo, reloads, gh.held == null, hand_label("rh")])
+	give_gun("rh", "smg")
+	P.cdR = 0.0
+	act("R")
+	act("R")
+	drop_held("rh")
+	var dropped = items.filter(func(i): return i.kind == "weapon")[0]
+	var dn: String = item_name(dropped)
+	take_item(dropped, "R")
+	var back := "%d/%d" % [gh.mag, gh.res]
+	P.cdR = 0.0
+	gh.mag = 3
+	var rl_ok: bool = start_reload("rh") and P.rlR > 0
+	act("R")
+	var blocked: bool = gh.mag == 3
+	_run(120)
+	print("smg: dropped as '%s', picked up with %s, manual reload %s, no firing while reloading %s, after reload %d/%d" % [dn, back, rl_ok, blocked, gh.mag, gh.res])
+	items = []
+	take_item(add_item({kind = "weapon", id = "shotgun"}, P.x, P.z), "R")
+	P.cdL = 0.0
+	P.cdR = 0.0
+	act("L")
+	print("shotgun shares one magazine across both hands: %d/%d and %d/%d" % [P.parts.lh.mag, P.parts.lh.res, P.parts.rh.mag, P.parts.rh.res])
+	items = []
+	# one leg: only legs that can move you alone still work, at half strength
+	var one_leg := []
+	for t in D.TYPES.leg.keys():
+		var dist := []
+		for both_legs in [true, false]:
+			test_room("fight")
+			enemies = prune(enemies, func(_e): return false)
+			P.parts.ll = {type = t}
+			P.parts.rl = {type = t} if both_legs else null
+			P.cdSp = 0.0
+			P.frog = 0.0
+			t_aim = Vector2(P.x, P.z - 30)
+			var x0: float = P.x
+			var z0: float = P.z
+			ability()
+			_run(70)
+			dist.append(Vector2(P.x - x0, P.z - z0).length())
+		one_leg.append("%s %.0f>%.0f" % [t, dist[0], dist[1]])
+	print("SPACE distance with two legs > one leg: " + ", ".join(one_leg))
+	P.parts.ll = {type = "flesh"}
+	P.parts.rl = null
+	print("one flesh leg: label '%s', info '%s'" % [space_label(), part_info("ll")[1]])
+	P.parts.rl = {type = "flesh"}
+	# a lost hand must be gone from the model, however it was lost
+	var hand_gone := []
+	var count_hand := func(slot): return pg.get_children().filter(func(n): return not n.is_queued_for_deletion() and n.get_meta("hand", "") == slot).size()
+	for how in ["sever", "mimic", "surgeon", "enemy hit"]:
+		new_game()
+		test_room("fight")
+		enemies = prune(enemies, func(_e): return false)
+		chests = []
+		render()
+		var had: int = count_hand.call("lh")
+		match how:
+			"sever":
+				sever("lh")
+			"mimic":
+				_test_chest(P.x, "mimic")
+				chests[0].z = P.z - 1.5
+				interact("L")
+			"surgeon":
+				altar = {x = P.x, z = P.z, used = false, m = null}
+				for i in 50:
+					if P.parts.lh == null:
+						break
+					altar.used = false
+					P.parts.le = null
+					P.parts.lr = null
+					P.parts.ll = null
+					use_altar("L")
+				altar = null
+			"enemy hit":
+				for i in 400:
+					if P.parts.lh == null:
+						break
+					P.inv = 0.0
+					P.hp = 50
+					hurt(1, 1.0, {x = P.x, z = P.z - 1, hp = 3.0, kb = 0.0})
+		enemies = prune(enemies, func(_e): return false)
+		render()
+		hand_gone.append("%s: lost %s, meshes %d>%d" % [how, P.parts.lh == null, had, count_hand.call("lh")])
+	print("lost hand leaves the model - " + " | ".join(hand_gone))
+	state = "play"
+	toggle_info()
+	var frozen: bool = state == "info"
+	toggle_info()
+	print("tab screen: opens %s, closes %s, rows %s" % [frozen, state == "play", D.ORDER.map(func(s): return part_info(s)[0])])
+	new_game()
+	test_room("treasure")
+	enemies = prune(enemies, func(_e): return false)
+	chests = prune(chests, func(_c): return false)
+	items = prune(items, func(_i): return false)
+	spikes = prune(spikes, func(_s): return false)
+	P.parts.lh = new_hand("flesh", 0)
+	P.parts.rh = new_hand("fist")
 	P.scrap = 0
 	for i in 4:
 		take_item(add_item({kind = "scrap"}, P.x, P.z), "L")

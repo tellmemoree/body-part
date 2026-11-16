@@ -151,7 +151,7 @@ func _draw_hud() -> void:
 	_draw_senses(W)
 	text("Floor %d/%d - %s   kills %d" % [g.floor_n, g.FLOORS, D.ROOMS[g.room.type].split(" -")[0], g.kills], Vector2(16, 26), Color("dddddd"), 16)
 	text("Keys %d" % P.keys, Vector2(16, 76), Color("ccbb88"), 14)
-	_draw_minimap(Vector2(W - 154, H - 100))
+	_draw_map(Vector2(W - 154, H - 100), 26.0, 18.0, Vector2(140, 84))
 	if g.debug:
 		draw_rect(Rect2(8, 92, 420, g.DEBUG_HELP.size() * 18 + 34), Color(0, 0, 0, 0.75))
 		var hy := 112.0
@@ -181,6 +181,8 @@ func _draw_hud() -> void:
 					t += " %df" % p.fingers
 				if p.held != null:
 					t += " / " + D.GUNS[p.held].n
+					if D.GUNS[p.held].has("mag"):
+						t += " %d/%d" % [p.mag, p.res]
 				var arm = P.parts[g.arm_of(s)]
 				if arm != null and arm.hand2 != null:
 					t += " + " + g.part_name("hand", arm.hand2.type)
@@ -191,7 +193,7 @@ func _draw_hud() -> void:
 		y += row
 	# action bar
 	var bar := [
-		["LMB", g.hand_label("lh"), maxf(P.cdL, P.chL)], ["RMB", g.hand_label("rh"), maxf(P.cdR, P.chR)],
+		["LMB", g.hand_label("lh"), maxf(P.rlL, maxf(P.cdL, P.chL))], ["RMB", g.hand_label("rh"), maxf(P.rlR, maxf(P.cdR, P.chR))],
 		["F", g.jaw_label(), P.cdJ], ["SPACE", g.space_label(), maxf(P.cdSp, P.frog)],
 	]
 	for i in 4:
@@ -201,11 +203,13 @@ func _draw_hud() -> void:
 		if bar[i][2] > 0:
 			draw_rect(Rect2(x, by, 155 * minf(1.0, bar[i][2]), 34), Color(1, 1, 1, 0.15))
 		text("%s: %s" % [bar[i][0], bar[i][1]], Vector2(x + 77, by + 23), Color("ee4444") if bar[i][1] == "-" else Color.WHITE, 13, true)
-	text("WASD move / Q,E use left,right side / F jaw", Vector2(16, H - 16), Color("777777"), 13)
+	text("WASD move / Q,E use left,right side / F jaw / R reload / Tab body & map", Vector2(16, H - 16), Color("777777"), 13)
 	if g.msg_t > 0 and g.msg != "":
 		var w := font.get_string_size(g.msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x + 24
 		draw_rect(Rect2(W / 2 - w / 2, H - 98, w, 32), Color(0, 0, 0, 0.7))
 		text(g.msg, Vector2(W / 2, H - 76), Color.WHITE, 17, true)
+	if g.state == "info":
+		_draw_info(W, H)
 	if g.over:
 		draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, 0.8))
 		if g.won:
@@ -216,11 +220,72 @@ func _draw_hud() -> void:
 			text("You fell apart on floor %d" % g.floor_n, Vector2(W / 2, H / 2 - 10), Color.WHITE, 36, true)
 			text("%d kills - press R to try again" % g.kills, Vector2(W / 2, H / 2 + 28), Color.WHITE, 18, true)
 
+# Splits a text into lines no wider than w pixels.
+func wrap_text(t: String, w: float, fs: int) -> Array:
+	var out := []
+	var line := ""
+	for word in t.split(" "):
+		var next: String = word if line == "" else line + " " + word
+		if line != "" and font.get_string_size(next, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w:
+			out.append(line)
+			line = word
+		else:
+			line = next
+	out.append(line)
+	return out
+
+# Tab screen: the floor map enlarged, and what every attached (or missing) part does.
+func _draw_info(W: float, H: float) -> void:
+	var P = g.P
+	draw_rect(Rect2(0, 0, W, H), Color(0.02, 0.02, 0.04, 0.93))
+	var split := W * 0.42
+	# map
+	text("FLOOR %d of %d" % [g.floor_n, g.FLOORS], Vector2(32, 44), Color.WHITE, 22)
+	text("HP %d/%d    keys %d    kills %d" % [P.hp, g.max_hp(), P.keys, g.kills], Vector2(32, 68), Color("ccbb88"), 14)
+	var half := Vector2(split / 2 - 32, H / 2 - 120)
+	_draw_map(Vector2(split / 2 + 8, H / 2), 62.0, 44.0, half)
+	var lx := 32.0
+	var ly := H / 2 + half.y + 26
+	for l in [["you are here", Color.WHITE, true], ["cleared", Color("8a8aa0"), false], ["not cleared", Color("aa4444"), false], ["unvisited", Color("44445a"), false]]:
+		draw_rect(Rect2(lx, ly - 11, 16, 12), l[1], not l[2], 2.0 if l[2] else -1.0)
+		text(l[0], Vector2(lx + 22, ly), Color("aaaaaa"), 13)
+		lx += 40 + font.get_string_size(l[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	lx = 32.0
+	ly += 22
+	for k in ["treasure", "surgeon", "exit"]:
+		draw_rect(Rect2(lx, ly - 11, 16, 12), Color(D.DOOR_COLOR[k]))
+		text(k, Vector2(lx + 22, ly), Color("aaaaaa"), 13)
+		lx += 40 + font.get_string_size(k, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	# body
+	var x0 := split + 24
+	var tw := W - x0 - 250
+	text("YOUR BODY", Vector2(x0, 44), Color.WHITE, 22)
+	var rows := []
+	var total := 0.0
+	for s in D.ORDER:
+		var info: Array = g.part_info(s)
+		var lines: Array = wrap_text(info[1], tw, 13)
+		rows.append([s, info, lines])
+		total += 6 + 16 * maxi(1, lines.size())
+	var y := 76.0
+	var gap := clampf((H - 120 - total) / D.ORDER.size(), 0.0, 14.0)  # spread out when there is room
+	for r in rows:
+		var info: Array = r[1]
+		var gone: bool = info[0] == "MISSING"
+		text(D.SLOT[r[0]][1], Vector2(x0, y), Color("999999"), 13)
+		text(info[0], Vector2(x0 + 62, y), info[2], 13)
+		var ty := y
+		for line in r[2]:
+			text(line, Vector2(x0 + 226, ty), Color("ee8888") if gone else Color("cccccc"), 13)
+			ty += 16
+		y += 6 + 16 * maxi(1, r[2].size()) + gap
+	text("Tab / Esc: close", Vector2(W / 2, H - 18), Color("888899"), 14, true)
+
 # Map of the current floor, centred on the current room. Shows visited rooms and their neighbours.
-func _draw_minimap(c: Vector2) -> void:
-	var cw := 26.0
-	var chh := 18.0
-	var panel := Rect2(c - Vector2(140, 84), Vector2(280, 168))
+# cw / chh = size of one room cell, half = half the size of the panel.
+func _draw_map(c: Vector2, cw: float, chh: float, half: Vector2) -> void:
+	var k := cw / 26.0
+	var panel := Rect2(c - half, half * 2)
 	draw_rect(panel, Color(0, 0, 0, 0.55))
 	var cur = g.room
 	if not cur.has("gx") or g.rooms.is_empty():
@@ -234,7 +299,7 @@ func _draw_minimap(c: Vector2) -> void:
 		if not known:
 			continue
 		var p := c + Vector2((r.gx - cur.gx) * cw, (r.gy - cur.gy) * chh)
-		var rect := Rect2(p - Vector2(cw / 2 - 2, chh / 2 - 2), Vector2(cw - 4, chh - 4))
+		var rect := Rect2(p - Vector2(cw / 2 - 2 * k, chh / 2 - 2 * k), Vector2(cw - 4 * k, chh - 4 * k))
 		if not panel.encloses(rect):
 			continue
 		for dir in ["E", "S"]:
@@ -242,7 +307,7 @@ func _draw_minimap(c: Vector2) -> void:
 				var o = g.rooms[r.links[dir]]
 				if r.visited or o.visited:
 					var v := Vector2(g.DIRS[dir])
-					draw_line(p, p + Vector2(v.x * cw, v.y * chh), Color("777788"), 2.0)
+					draw_line(p, p + Vector2(v.x * cw, v.y * chh), Color("777788"), 2.0 * k)
 		var col := Color("44445a")
 		if r.visited:
 			col = Color("8a8aa0") if r.cleared else Color("aa4444")

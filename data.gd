@@ -102,6 +102,26 @@ const TYPES := {
 	},
 }
 
+# Shown on the Tab screen for plain flesh parts and for empty slots.
+const BASE_TIP := {
+	"eye": "sees its side of the screen; two eyes aim straight",
+	"ear": "points at enemies you cannot see on its side",
+	"jaw": "F: weak bite; eats hearts",
+	"skin": "nothing special",
+	"arm": "carries a hand",
+	"hand": "jab; holds weapons, opens chests and doors; fewer fingers = slower trigger and reload",
+	"leg": "walk; SPACE: roll (needs both legs)",
+}
+const MISSING_TIP := {
+	"eye": "blind on that side, shots spread; no eyes: nearly blind",
+	"ear": "cannot hear unseen enemies on that side",
+	"jaw": "cannot bite or eat hearts",
+	"arm": "no arm, so no hand on that side",
+	"hand": "that click does nothing; cannot open chests or doors with that side",
+	"leg": "hopping, slower, most SPACE moves fail; no legs: crawling",
+	"organ": "empty organ slot",
+}
+
 # slot -> [kind, label]
 const SLOT := {
 	"le": ["eye", "L eye"], "re": ["eye", "R eye"],
@@ -117,7 +137,8 @@ const QUIRKY := [["hand", "maw"], ["leg", "crate"], ["eye", "keyhole"]]
 const QUIRKY_TYPES := ["maw", "crate", "keyhole"]
 const SCRAP_NEEDED := 5
 const CHEST_HP := 5
-const KEY_DROP := 0.08
+const KEYS_PER_FLOOR := [1, 2]  # every floor gives out this many keys in total (min, max)
+const KEY_CHANCE := 0.04  # chance a normal kill drops one of them; elites always do, the exit guardian drops the rest
 const SAW_SCRAP := 0.5  # chance a chainsawed chest still leaves scrap
 const MIMIC_SENSE := {"keyhole": 6.0, "cat": 4.0}  # how close these parts must be to notice a mimic
 
@@ -131,16 +152,20 @@ const SIDE := {
 }
 # Hands that can hold weapons.
 const GRIP := ["flesh", "skeleton", "baby", "rotting"]
+# What SPACE does on a single leg: speed / distance multiplier. A leg type not listed cannot do its move alone.
+const ONE_LEG := {"wheel": 0.5, "rocket": 0.5, "spring": 0.5, "frog": 0.5, "ghost": 1.0, "bomb": 1.0, "crate": 1.0}
 const LEG_SPD := {"robot": 1.1, "peg": 0.9, "crate": 0.9, "wheel": 1.3, "tread": 0.75, "squeaky": 1.35, "bomb": 0.95}
 # Loot weight per tier: [common, rare, legendary]
 const TIER_W := [6, 3, 1]
 const TIER_W_RARE := [3, 3, 2]
 
+# mag = shots per magazine, ammo = total shots in a fresh gun (first magazine included), reload = seconds.
+# A gun with nothing left is thrown away. The knife needs none.
 const GUNS := {
-	"pistol": {n = "pistol", hands = 1, fingers = 3, cd = 0.32, dmg = 1.0, spd = 30.0, spread = 0.03, len = 0.5},
-	"smg": {n = "SMG", hands = 1, fingers = 4, cd = 0.085, dmg = 0.45, spd = 28.0, spread = 0.16, len = 0.7},
-	"shotgun": {n = "shotgun", hands = 2, fingers = 2, cd = 0.75, dmg = 1.0, spd = 26.0, spread = 0.45, pellets = 6, recoil = 11.0, life = 0.45, len = 1.1},
-	"sniper": {n = "sniper", hands = 2, fingers = 3, cd = 1.1, dmg = 5.0, spd = 70.0, spread = 0.0, pierce = true, len = 1.6},
+	"pistol": {n = "pistol", hands = 1, fingers = 3, cd = 0.32, dmg = 1.0, spd = 30.0, spread = 0.03, len = 0.5, mag = 8, ammo = 48, reload = 0.9},
+	"smg": {n = "SMG", hands = 1, fingers = 4, cd = 0.085, dmg = 0.45, spd = 28.0, spread = 0.16, len = 0.7, mag = 30, ammo = 120, reload = 1.3},
+	"shotgun": {n = "shotgun", hands = 2, fingers = 2, cd = 0.75, dmg = 1.0, spd = 26.0, spread = 0.45, pellets = 6, recoil = 11.0, life = 0.45, len = 1.1, mag = 4, ammo = 16, reload = 1.6},
+	"sniper": {n = "sniper", hands = 2, fingers = 3, cd = 1.1, dmg = 5.0, spd = 70.0, spread = 0.0, pierce = true, len = 1.6, mag = 3, ammo = 9, reload = 1.8},
 	"knife": {n = "knife", hands = 1, fingers = 1, melee = true, cd = 0.28, dmg = 2.0, range = 2.7, arc = 1.0, len = 0.6},
 }
 
