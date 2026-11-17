@@ -62,14 +62,14 @@ func open(kind: String) -> void:
 		title.text = "SPARE PARTS"
 		sub.text = "You will come apart. Pick up the pieces."
 		_button("New run", g.start_run)
-		_button("Debug room", g.start_debug)
+		_button("Debug room", g.debug_room.start_debug)
 		_button("Quit", g.quit_game)
 	else:
 		title.text = "PAUSED"
 		sub.text = "Floor %d  -  %d kills" % [g.floor_n, g.kills]
 		_button("Resume", g.resume)
 		if g.debug:
-			_button("Restart debug room", g.start_debug)
+			_button("Restart debug room", g.debug_room.start_debug)
 		else:
 			_button("Restart run", g.start_run)
 		_button("Main menu", g.to_main_menu)

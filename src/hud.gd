@@ -2,7 +2,7 @@ extends Control
 # Draws either the in-world overlay (labels, effects; world = true)
 # or the screen HUD (health, body panel, action bar; world = false).
 
-const D = preload("res://data.gd")
+const D = preload("res://src/data.gd")
 var g
 var world := false
 var font: Font
@@ -56,7 +56,7 @@ func _draw_world() -> void:
 			var a := a0 + (a1 - a0) * i / 16.0
 			pts.append(pr(f.x + cos(a) * r, 0.6, f.z + sin(a) * r))
 		draw_polyline(pts, col, 3.0)
-	var cyber: bool = g.has_type(["le", "re"], "cyber")
+	var cyber: bool = g.body.has_type(["le", "re"], "cyber")
 	if cyber:
 		draw_line(pr(P.x, 1.5, P.z), pr(P.x + cos(P.aim) * 30, 1.5, P.z + sin(P.aim) * 30), Color(1, 0.2, 0.33, 0.4), 1.0)
 	for e in g.enemies:
@@ -71,15 +71,15 @@ func _draw_world() -> void:
 				draw_circle(Vector2(sx, p.y - 7), 4, Color(st[1]))
 				sx += 12
 	for i in g.items:
-		var n: String = g.item_name(i)
+		var n: String = g.body.item_name(i)
 		var col := Color.WHITE
 		if i.has("rot"):
 			n += " %ds" % ceili(i.rot)
 			if i.rot < 8:
 				col = Color("ff6666")
 		text(n, pr(i.x, 1.6, i.z), col, 13, true)
-	var keyhole: bool = g.has_type(["le", "re"], "keyhole")
-	var cat_ear: bool = g.has_type(["lr", "rr"], "cat")
+	var keyhole: bool = g.body.has_type(["le", "re"], "keyhole")
+	var cat_ear: bool = g.body.has_type(["lr", "rr"], "cat")
 	for c in g.chests:
 		if c.open:
 			continue
@@ -96,12 +96,12 @@ func _draw_world() -> void:
 		text(label, pr(c.x, 2, c.z), col, 13, true)
 	if g.enemies.is_empty():
 		for d in g.doors:
-			text(g.room_label(d.to), pr(d.x, 4.2, d.z), Color.WHITE, 15, true)
+			text(g.world.room_label(d.to), pr(d.x, 4.2, d.z), Color.WHITE, 15, true)
 	if g.stairs != null:
 		text("Q / E: " + ("escape" if g.floor_n >= g.FLOORS else "descend"), pr(g.stairs.x, 2.5, g.stairs.z), Color("aaddff"), 16, true)
 	if g.altar != null and not g.altar.used:
 		text("SURGEON - Q: offer left flesh / E: offer right flesh", pr(g.altar.x, 3.2, g.altar.z), Color("ee99ff"), 14, true)
-	var near = g.nearest(g.items, g.reach())
+	var near = g.nearest(g.items, g.body.reach())
 	if near != null:
 		var t := "Q / E: take"
 		if near.kind == "part":
@@ -122,8 +122,8 @@ func hidden_at(p: Vector2, center: Vector2, W: float) -> bool:
 func _draw_senses(W: float) -> void:
 	var P = g.P
 	var center: Vector2 = pr(P.x, 1.5, P.z)
-	var thermal: bool = g.has_type(["le", "re"], "thermal")
-	var echo: bool = g.has_type(["lr", "rr"], "bat") and fmod(g.time, 2.0) < 0.6
+	var thermal: bool = g.body.has_type(["le", "re"], "thermal")
+	var echo: bool = g.body.has_type(["lr", "rr"], "bat") and fmod(g.time, 2.0) < 0.6
 	for e in g.enemies:
 		var p := pr(e.x, 1.0, e.z)
 		if not hidden_at(p, center, W):
@@ -139,7 +139,7 @@ func _draw_senses(W: float) -> void:
 		var tip := center + dirv * 78
 		var side := Vector2(-dirv.y, dirv.x)
 		draw_colored_polygon(PackedVector2Array([tip, tip - dirv * 16 + side * 8, tip - dirv * 16 - side * 8]), Color(1, 0.3, 0.3, 0.85))
-	if g.has_type(["lr", "rr"], "radar"):
+	if g.body.has_type(["lr", "rr"], "radar"):
 		for b in g.bullets:
 			if not b.mine:
 				draw_line(pr(b.x, 1.4, b.z), pr(b.x + b.vx * 0.7, 1.4, b.z + b.vz * 0.7), Color(1, 0.4, 1, 0.6), 2.0)
@@ -153,14 +153,14 @@ func _draw_hud() -> void:
 	text("Keys %d" % P.keys, Vector2(16, 76), Color("ccbb88"), 14)
 	_draw_map(Vector2(W - 154, H - 100), 26.0, 18.0, Vector2(140, 84))
 	if g.debug:
-		draw_rect(Rect2(8, 92, 420, g.DEBUG_HELP.size() * 18 + 34), Color(0, 0, 0, 0.75))
+		draw_rect(Rect2(8, 92, 420, g.debug_room.DEBUG_HELP.size() * 18 + 34), Color(0, 0, 0, 0.75))
 		var hy := 112.0
-		for line in g.DEBUG_HELP:
+		for line in g.debug_room.DEBUG_HELP:
 			text(line, Vector2(16, hy), Color("88ddff") if hy < 113 else Color("aaaaaa"), 13)
 			hy += 18
 		if g.god:
 			text("GOD MODE", Vector2(16, hy + 4), Color("ffdd55"), 14)
-	for i in g.max_hp():
+	for i in g.body.max_hp():
 		var c := Color("ee4444") if i < P.hp else Color(0.3, 0.1, 0.1)
 		draw_rect(Rect2(16 + i * 20, 38, 16, 16), c)
 	# body panel
@@ -183,7 +183,7 @@ func _draw_hud() -> void:
 					t += " / " + D.GUNS[p.held].n
 					if D.GUNS[p.held].has("mag"):
 						t += " %d/%d" % [p.mag, p.res]
-				var arm = P.parts[g.arm_of(s)]
+				var arm = P.parts[g.body.arm_of(s)]
 				if arm != null and arm.hand2 != null:
 					t += " + " + g.part_name("hand", arm.hand2.type)
 			elif kind == "arm" and p.out:
@@ -193,8 +193,8 @@ func _draw_hud() -> void:
 		y += row
 	# action bar
 	var bar := [
-		["LMB", g.hand_label("lh"), maxf(P.rlL, maxf(P.cdL, P.chL))], ["RMB", g.hand_label("rh"), maxf(P.rlR, maxf(P.cdR, P.chR))],
-		["F", g.jaw_label(), P.cdJ], ["SPACE", g.space_label(), maxf(P.cdSp, P.frog)],
+		["LMB", g.body.hand_label("lh"), maxf(P.rlL, maxf(P.cdL, P.chL))], ["RMB", g.body.hand_label("rh"), maxf(P.rlR, maxf(P.cdR, P.chR))],
+		["F", g.body.jaw_label(), P.cdJ], ["SPACE", g.body.space_label(), maxf(P.cdSp, P.frog)],
 	]
 	for i in 4:
 		var x := W / 2 - 330 + i * 165
@@ -213,7 +213,7 @@ func _draw_hud() -> void:
 	if g.over:
 		draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, 0.8))
 		if g.won:
-			var left: int = D.LIMBS.size() - g.missing()
+			var left: int = D.LIMBS.size() - g.body.missing()
 			text("You made it out with %d of your %d parts" % [left, D.LIMBS.size()], Vector2(W / 2, H / 2 - 10), Color("aaffaa"), 36, true)
 			text("%d kills - press R for another run" % g.kills, Vector2(W / 2, H / 2 + 28), Color.WHITE, 18, true)
 		else:
@@ -241,7 +241,7 @@ func _draw_info(W: float, H: float) -> void:
 	var split := W * 0.42
 	# map
 	text("FLOOR %d of %d" % [g.floor_n, g.FLOORS], Vector2(32, 44), Color.WHITE, 22)
-	text("HP %d/%d    keys %d    kills %d" % [P.hp, g.max_hp(), P.keys, g.kills], Vector2(32, 68), Color("ccbb88"), 14)
+	text("HP %d/%d    keys %d    kills %d" % [P.hp, g.body.max_hp(), P.keys, g.kills], Vector2(32, 68), Color("ccbb88"), 14)
 	var half := Vector2(split / 2 - 32, H / 2 - 120)
 	_draw_map(Vector2(split / 2 + 8, H / 2), 62.0, 44.0, half)
 	var lx := 32.0
@@ -263,7 +263,7 @@ func _draw_info(W: float, H: float) -> void:
 	var rows := []
 	var total := 0.0
 	for s in D.ORDER:
-		var info: Array = g.part_info(s)
+		var info: Array = g.body.part_info(s)
 		var lines: Array = wrap_text(info[1], tw, 13)
 		rows.append([s, info, lines])
 		total += 6 + 16 * maxi(1, lines.size())
@@ -311,7 +311,7 @@ func _draw_map(c: Vector2, cw: float, chh: float, half: Vector2) -> void:
 		var col := Color("44445a")
 		if r.visited:
 			col = Color("8a8aa0") if r.cleared else Color("aa4444")
-		if r.type in ["treasure", "surgeon", "exit"] or (not r.visited and g.has_type(["le", "re"], "keyhole")):
+		if r.type in ["treasure", "surgeon", "exit"] or (not r.visited and g.body.has_type(["le", "re"], "keyhole")):
 			col = Color(D.DOOR_COLOR[r.type])
 			if not r.visited:
 				col = col.darkened(0.35)
