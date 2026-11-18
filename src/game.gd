@@ -386,7 +386,6 @@ func new_game() -> void:
 	won = false
 	room = {}
 	world.next_floor()
-	say("Left click = left hand. Right click = right hand. Q / E grab things with that side. F = jaw.", 7.0)
 
 func update(dt: float) -> void:
 	time += dt
