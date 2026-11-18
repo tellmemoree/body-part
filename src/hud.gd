@@ -3,6 +3,7 @@ extends Control
 # or the screen HUD (health, body panel, action bar; world = false).
 
 const D = preload("res://src/data.gd")
+const PICK_ROWS := 6  # most rows the loot picker shows at once
 var g
 var world := false
 var font: Font
@@ -100,15 +101,59 @@ func _draw_world() -> void:
 	if g.stairs != null:
 		text("Q / E: " + ("escape" if g.floor_n >= g.FLOORS else "descend"), pr(g.stairs.x, 2.5, g.stairs.z), Color("aaddff"), 16, true)
 	if g.altar != null and not g.altar.used:
-		text("SURGEON - Q: offer left flesh / E: offer right flesh", pr(g.altar.x, 3.2, g.altar.z), Color("ee99ff"), 14, true)
-	var near = g.nearest(g.items, g.body.reach())
-	if near != null:
+		_draw_altar()
+	var near: Array = g.player.in_reach()
+	if not near.is_empty():
+		var cur = g.player.picked()
 		var t := "Q / E: take"
-		if near.kind == "part":
-			t = "Q / E: attach" if near.pk in ["organ", "jaw", "skin"] else "Q: attach left / E: attach right"
-		elif near.kind == "weapon" and D.GUNS[near.id].hands == 1:
+		if cur.kind == "part":
+			t = "Q / E: attach" if cur.pk in ["organ", "jaw", "skin"] else "Q: attach left / E: attach right"
+		elif cur.kind == "weapon" and D.GUNS[cur.id].hands == 1:
 			t = "Q: left hand / E: right hand"
 		text(t, pr(P.x, 4, P.z), Color("ffff88"), 14, true)
+		if near.size() > 1:
+			ground_ring(cur.x, cur.z, 0.7, Color("ffff88"), 2.0)
+			_draw_picker(near, cur)
+
+# Several items in reach: a list beside the player, the one Q / E takes highlighted.
+func _draw_picker(near: Array, cur) -> void:
+	var at := 0
+	for i in near.size():
+		if is_same(near[i], cur):
+			at = i
+	var first := clampi(at - int(PICK_ROWS / 2.0), 0, maxi(0, near.size() - PICK_ROWS))
+	var shown := near.slice(first, first + PICK_ROWS)
+	var x := pr(g.P.x, 2, g.P.z).x + 40
+	var y := pr(g.P.x, 2, g.P.z).y - shown.size() * 9.0
+	var w := 190.0
+	draw_rect(Rect2(x - 6, y - 18, w, 18 * shown.size() + 26), Color(0, 0, 0, 0.6))
+	text("wheel: choose  (%d / %d)" % [at + 1, near.size()], Vector2(x, y - 4), Color(1, 1, 1, 0.55), 11)
+	for i in shown.size():
+		var it: Dictionary = shown[i]
+		var on: bool = is_same(it, cur)
+		var row := Vector2(x, y + 14 + i * 18)
+		if on:
+			draw_rect(Rect2(x - 6, row.y - 13, w, 17), Color(1, 1, 0.53, 0.18))
+		text(("> " if on else "   ") + g.body.item_name(it), row, Color("ffff88") if on else Color(1, 1, 1, 0.7), 13)
+
+# Surgeon: from afar just what it is; up close, what each side could lose and what you get.
+func _draw_altar() -> void:
+	var p := pr(g.altar.x, 3.2, g.altar.z)
+	var pink := Color("ee99ff")
+	if g.d2(g.altar, g.P) >= 3.2:
+		text("SURGEON - trades one flesh part for two rare items", p, pink, 14, true)
+		text("walk up to trade", p + Vector2(0, 18), Color(1, 1, 1, 0.6), 12, true)
+		return
+	# up close the lines stack upwards, so they stay clear of the player standing in front
+	text("SURGEON - trades one flesh part for two rare items", p + Vector2(0, -56), pink, 14, true)
+	text("takes a random flesh part from the side you offer", p + Vector2(0, -38), Color(1, 1, 1, 0.75), 12, true)
+	for row in [["L", "Q", -18.0], ["R", "E", 0.0]]:
+		var offer: String = g.loot.altar_offer(row[0])
+		var at: Vector2 = p + Vector2(0, row[2])
+		if offer == "":
+			text("%s: %s side - nothing it will take" % [row[1], g.side_name(row[0])], at, Color("777777"), 13, true)
+		else:
+			text("%s: %s side - your %s" % [row[1], g.side_name(row[0]), offer], at, pink, 13, true)
 
 # True when the vision shader is hiding this screen position.
 func hidden_at(p: Vector2, center: Vector2, W: float) -> bool:
@@ -203,7 +248,7 @@ func _draw_hud() -> void:
 		if bar[i][2] > 0:
 			draw_rect(Rect2(x, by, 155 * minf(1.0, bar[i][2]), 34), Color(1, 1, 1, 0.15))
 		text("%s: %s" % [bar[i][0], bar[i][1]], Vector2(x + 77, by + 23), Color("ee4444") if bar[i][1] == "-" else Color.WHITE, 13, true)
-	text("WASD move / Q,E use left,right side / F jaw / R reload / Tab body & map", Vector2(16, H - 16), Color("777777"), 13)
+	text("WASD move / Q,E use left,right side / wheel pick loot / F jaw / R reload / Tab body & map", Vector2(16, H - 16), Color("777777"), 13)
 	if g.msg_t > 0 and g.msg != "":
 		var w := font.get_string_size(g.msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x + 24
 		draw_rect(Rect2(W / 2 - w / 2, H - 98, w, 32), Color(0, 0, 0, 0.7))

@@ -156,7 +156,8 @@ func wake(c: Dictionary) -> void:
 	c.gone = true
 	g.spawn_q.append({x = c.x, z = c.z, cd = 0.0})
 
-func use_altar(side: String) -> void:
+# Slots the surgeon may take on one side: flesh eye, ear, hand or leg, never your last hand.
+func altar_cands(side: String) -> Array:
 	var cands := []
 	for s in (["le", "lr", "lh", "ll"] if side == "L" else ["re", "rr", "rh", "rl"]):
 		if g.P.parts[s] != null and g.P.parts[s].type == "flesh":
@@ -165,11 +166,25 @@ func use_altar(side: String) -> void:
 	var hs: String = D.SIDE[side].hand
 	if cands.has(hs) and g.P.parts["rh" if hs == "lh" else "lh"] == null:
 		cands.erase(hs)
-		if cands.is_empty():
-			g.say("The surgeon will not take your last hand.")
-			return
+	return cands
+
+# What the surgeon could take on one side, for the label above the altar ("eye, ear or leg").
+func altar_offer(side: String) -> String:
+	var names := PackedStringArray()
+	for s in altar_cands(side):
+		names.append(D.SLOT[s][0])
+	if names.size() <= 1:
+		return "".join(names)
+	return ", ".join(names.slice(0, -1)) + " or " + names[-1]
+
+func use_altar(side: String) -> void:
+	var cands := altar_cands(side)
 	if cands.is_empty():
-		g.say("The surgeon wants flesh from your %s side. You have none there." % g.side_name(side))
+		var hs: String = D.SIDE[side].hand
+		if g.P.parts[hs] != null and g.P.parts[hs].type == "flesh":
+			g.say("The surgeon will not take your last hand.")
+		else:
+			g.say("The surgeon wants flesh from your %s side. You have none there." % g.side_name(side))
 		return
 	var s: String = cands.pick_random()
 	if s in ["lh", "rh"]:
@@ -182,7 +197,7 @@ func use_altar(side: String) -> void:
 	g.dirty = true
 	loot(g.altar.x, g.altar.z + 1, true)
 	loot(g.altar.x, g.altar.z + 1, true)
-	g.say("The surgeon takes your %s. Fair trade." % D.SLOT[s][1])
+	g.say("The surgeon takes your %s and leaves two rare things on the floor." % D.SLOT[s][1], 4.5)
 
 # Picks a part type of the given kind. Rarer tiers are less likely; never plain flesh or a scrap-only part.
 func roll_part(pk: String, rare: bool) -> String:

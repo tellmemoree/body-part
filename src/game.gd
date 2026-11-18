@@ -59,6 +59,8 @@ var msg := ""
 var msg_t := 0.0
 var dirty := true
 var pending_room = null
+var pick = null  # the item Q / E takes when several are in reach (mouse wheel changes it)
+var pick_chosen := false  # true once the wheel moved it: then Q / E takes exactly that one
 var kills := 0
 var fires: Array = []  # burning ground left by a rocket leg
 var flyers: Array = []  # thrown boomerang arms
@@ -228,6 +230,13 @@ func _build_world() -> void:
 	layer.add_child(menu)
 
 func _unhandled_input(ev: InputEvent) -> void:
+	if ev is InputEventMouseButton and ev.pressed and state == "play" and not over:
+		if ev.button_index == MOUSE_BUTTON_WHEEL_UP:
+			player.cycle_pick(-1)
+			return
+		if ev.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			player.cycle_pick(1)
+			return
 	if ev is InputEventKey and ev.pressed and not ev.echo:
 		if ev.physical_keycode == KEY_ESCAPE:
 			if state == "info":

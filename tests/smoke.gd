@@ -586,6 +586,7 @@ func smoke() -> void:
 	g.altar.used = false
 	g.loot.use_altar("R")
 	print("surgeon leaves the last hand: %s (refused when only the hand is left: %s)" % [last_ok, g.P.parts.rh != null and not g.altar.used])
+	print("surgeon offer with only the last hand: '%s'" % g.loot.altar_offer("R"))
 	g.altar = null
 	g.items.clear()
 	g.body.lose_hand("rh")
@@ -598,6 +599,24 @@ func smoke() -> void:
 	test_room("fight", 6)
 	_run(300)
 	print("late rooms: %s" % [g.enemies.map(func(e): return e.type)])
+	# loot picker: the wheel chooses which of several items Q / E takes
+	g.new_game()
+	test_room("start")
+	g.items.clear()
+	for k in ["key", "scrap", "key"]:
+		g.add_item({kind = k}, g.P.x + 0.3, g.P.z)
+	var auto_pick = g.player.picked()
+	g.player.cycle_pick(1)
+	g.player.cycle_pick(1)
+	var chosen = g.player.picked()
+	var keys0: int = g.P.keys
+	var scrap0: int = g.P.scrap
+	g.player.interact("L")
+	print("picker: %d in reach, wheel moved the pick %s, took the picked one %s, %d left" % [
+		3, not is_same(auto_pick, chosen), not g.items.any(func(i): return is_same(i, chosen)),
+		g.items.size()])
+	print("picker: keys +%d scrap +%d" % [g.P.keys - keys0, g.P.scrap - scrap0])
+	g.items.clear()
 	# spikes never land in front of a door, where the player arrives
 	g.floor_n = 4
 	var spiked := 0

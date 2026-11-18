@@ -1,7 +1,7 @@
 extends Control
 # Main menu and pause menu. The game node calls open(kind) / close().
 
-const CONTROLS := "WASD move   |   Left / right click: left / right hand   |   Q / E: use left / right side   |   F: jaw   |   Space: legs   |   R: reload   |   Tab: body & map   |   Esc: pause"
+const CONTROLS := "WASD move   |   Left / right click: left / right hand   |   Q / E: use left / right side   |   Wheel: pick loot   |   F: jaw   |   Space: legs   |   R: reload   |   Tab: body & map   |   Esc: pause"
 
 var g
 var title: Label

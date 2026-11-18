@@ -18,7 +18,7 @@ What the game is and what is planned lives in [PLAN.md](PLAN.md); this file cove
 | File | Lines | What it holds |
 |---|---|---|
 | `src/game.gd` | ~420 | The game node: all shared state, setup, input, menus, `new_game()` and the frame loop `update()`. Small helpers used everywhere (`say`, `d2`, `nearest`, `prune`, `add_item`, `clamp_pos`, `in_block`) |
-| `src/player.gd` | ~500 | What the player does: walking, dashes and leg abilities (`ability`), hand actions (`act`, `use_hand`), jaw, picking things up (`interact`, `take_item`) |
+| `src/player.gd` | ~530 | What the player does: walking, dashes and leg abilities (`ability`), hand actions (`act`, `use_hand`), jaw, picking things up (`interact`, `take_item`, the loot picker: `in_reach`, `picked`, `cycle_pick`) |
 | `src/body.gd` | ~470 | The body: part queries (`has_type`, `has_org`, `legs`, `power`, `reach`…), losing parts (`sever`, `hurt`), attaching parts (`attach`), new parts, labels for the HUD and Tab screen |
 | `src/guns.gd` | ~110 | Held weapons: `give_gun`, `drop_held`, ammo, magazines, reloading |
 | `src/combat.gd` | ~280 | Damage to enemies: `hit`, `melee`, `shoot`, `explode`, status effects, cutting enemy limbs, bullets and thrown arms every frame |
@@ -198,7 +198,8 @@ lets an enemy walk downhill on that field. Rooms without obstacles skip it and e
 | Input | Code path |
 |---|---|
 | Left / right click | `player.update_hands()` → `player.act(side)` → `player.use_hand()` for that hand (and the forked arm's second hand). Every hand type is a `match` branch that returns its cooldown |
-| Q / E | `player.interact(side)`: pick up the nearest usable item, else open a chest, use the altar, take the stairs, open a door |
+| Q / E | `player.interact(side)`: pick up the item chosen with the wheel, or the nearest usable one, else open a chest, use the altar, take the stairs, open a door |
+| Mouse wheel | `player.cycle_pick(step)`: with several items in reach, choose which one Q / E takes (`g.pick`, `g.pick_chosen`) |
 | F | `player.jaw_act()` |
 | Space | `player.ability()`: what it does depends on the legs (`body.leg_move()`), and on one leg only if `ONE_LEG` allows it |
 | R | `guns.reload_all()` (restart when the run is over) |

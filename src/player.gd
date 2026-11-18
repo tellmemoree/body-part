@@ -14,10 +14,14 @@ func interact(side: String) -> void:
 		return
 	var hs: String = D.SIDE[side].hand
 	var hand = g.P.parts[hs]
-	# nearest first; something this side cannot use does not block what lies under it
-	var near := g.items.filter(func(i): return g.d2(i, g.P) < g.body.reach())
-	near.sort_custom(func(a, b): return g.d2(a, g.P) < g.d2(b, g.P))
+	var near := in_reach()
 	if not near.is_empty():
+		var chosen = picked()
+		if g.pick_chosen:  # picked with the wheel: exactly that one
+			take_item(chosen, side)
+			return
+		# otherwise nearest first; something this side cannot use does not block what lies under it
+		near.sort_custom(func(a, b): return g.d2(a, g.P) < g.d2(b, g.P))
 		var why := ""
 		for it in near:
 			if take_item(it, side):
@@ -46,6 +50,32 @@ func interact(side: String) -> void:
 			g.say("No %s hand for the door. (A robot leg dash can kick it down.)" % g.side_name(side))
 		else:
 			g.world.try_door(dr)
+
+# Items within reach, in the order they lie in the room (stable, so the picker list does not jump).
+func in_reach() -> Array:
+	return g.items.filter(func(i): return g.d2(i, g.P) < g.body.reach())
+
+# The item Q / E takes: the one picked with the wheel while it stays in reach, else the nearest.
+func picked():
+	var near := in_reach()
+	if g.pick_chosen and near.any(func(i): return is_same(i, g.pick)):
+		return g.pick
+	g.pick_chosen = false
+	g.pick = g.nearest(near, INF)
+	return g.pick
+
+# Mouse wheel: move the pick through the items in reach (wraps around).
+func cycle_pick(step: int) -> void:
+	var near := in_reach()
+	if near.size() < 2:
+		return
+	var cur = picked()
+	var at := 0
+	for i in near.size():
+		if is_same(near[i], cur):
+			at = i
+	g.pick = near[posmod(at + step, near.size())]
+	g.pick_chosen = true
 
 func take_item(it: Dictionary, side: String) -> bool:
 	var hs: String = D.SIDE[side].hand
