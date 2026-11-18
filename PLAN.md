@@ -195,5 +195,5 @@ _Add what feels off here after each session._
 
 - Play: open the project in Godot, press F5.
 - Mechanics test: `Godot --headless --path . -- --smoke [--seed N]` (same seed, same output)
-- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump|chests] [pillars|corners|vbars|hbars|crates]`
+- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump|chests|picker|surgeon] [pillars|corners|vbars|hbars|crates]`
 - Content tables (parts, guns, enemies, rooms) are in `src/data.gd`. How the code is organised: `ARCHITECTURE.md`.

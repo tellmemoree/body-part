@@ -71,14 +71,13 @@ func _draw_world() -> void:
 			if e[st[0]] > 0:
 				draw_circle(Vector2(sx, p.y - 7), 4, Color(st[1]))
 				sx += 12
+	var near: Array = g.player.in_reach()
+	var listed := near.size() > 1  # the picker list names these, so their floor labels would only pile up
 	for i in g.items:
-		var n: String = g.body.item_name(i)
-		var col := Color.WHITE
-		if i.has("rot"):
-			n += " %ds" % ceili(i.rot)
-			if i.rot < 8:
-				col = Color("ff6666")
-		text(n, pr(i.x, 1.6, i.z), col, 13, true)
+		if listed and near.any(func(o): return is_same(o, i)):
+			continue
+		var lb := item_label(i)
+		text(lb[0], pr(i.x, 1.6, i.z), lb[1], 13, true)
 	var keyhole: bool = g.body.has_type(["le", "re"], "keyhole")
 	var cat_ear: bool = g.body.has_type(["lr", "rr"], "cat")
 	for c in g.chests:
@@ -102,7 +101,6 @@ func _draw_world() -> void:
 		text("Q / E: " + ("escape" if g.floor_n >= g.FLOORS else "descend"), pr(g.stairs.x, 2.5, g.stairs.z), Color("aaddff"), 16, true)
 	if g.altar != null and not g.altar.used:
 		_draw_altar()
-	var near: Array = g.player.in_reach()
 	if not near.is_empty():
 		var cur = g.player.picked()
 		var t := "Q / E: take"
@@ -110,31 +108,45 @@ func _draw_world() -> void:
 			t = "Q / E: attach" if cur.pk in ["organ", "jaw", "skin"] else "Q: attach left / E: attach right"
 		elif cur.kind == "weapon" and D.GUNS[cur.id].hands == 1:
 			t = "Q: left hand / E: right hand"
-		text(t, pr(P.x, 4, P.z), Color("ffff88"), 14, true)
-		if near.size() > 1:
+		if listed:
 			ground_ring(cur.x, cur.z, 0.7, Color("ffff88"), 2.0)
-			_draw_picker(near, cur)
+			_draw_picker(near, cur, t)
+		else:
+			text(t, pr(P.x, 4, P.z), Color("ffff88"), 14, true)
 
-# Several items in reach: a list beside the player, the one Q / E takes highlighted.
-func _draw_picker(near: Array, cur) -> void:
+# Name shown for an item on the floor and in the picker; rotting parts count down and turn red.
+func item_label(i: Dictionary) -> Array:
+	var n: String = g.body.item_name(i)
+	var col := Color.WHITE
+	if i.has("rot"):
+		n += " %ds" % ceili(i.rot)
+		if i.rot < 8:
+			col = Color("ff6666")
+	return [n, col]
+
+# Several items in reach: a list beside the player, the one Q / E takes highlighted, the action on top.
+func _draw_picker(near: Array, cur, hint: String) -> void:
 	var at := 0
 	for i in near.size():
 		if is_same(near[i], cur):
 			at = i
 	var first := clampi(at - int(PICK_ROWS / 2.0), 0, maxi(0, near.size() - PICK_ROWS))
 	var shown := near.slice(first, first + PICK_ROWS)
-	var x := pr(g.P.x, 2, g.P.z).x + 40
-	var y := pr(g.P.x, 2, g.P.z).y - shown.size() * 9.0
-	var w := 190.0
-	draw_rect(Rect2(x - 6, y - 18, w, 18 * shown.size() + 26), Color(0, 0, 0, 0.6))
-	text("wheel: choose  (%d / %d)" % [at + 1, near.size()], Vector2(x, y - 4), Color(1, 1, 1, 0.55), 11)
+	var p := pr(g.P.x, 2, g.P.z)
+	var x := p.x + 40
+	var top := p.y - (shown.size() * 18 + 40) / 2.0
+	var w := maxf(200.0, font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 12)
+	draw_rect(Rect2(x - 6, top, w, shown.size() * 18 + 44), Color(0, 0, 0, 0.65))
+	text(hint, Vector2(x, top + 16), Color("ffff88"), 13)
+	text("wheel: choose  (%d / %d)" % [at + 1, near.size()], Vector2(x, top + 32), Color(1, 1, 1, 0.55), 11)
 	for i in shown.size():
 		var it: Dictionary = shown[i]
 		var on: bool = is_same(it, cur)
-		var row := Vector2(x, y + 14 + i * 18)
+		var y := top + 52 + i * 18
 		if on:
-			draw_rect(Rect2(x - 6, row.y - 13, w, 17), Color(1, 1, 0.53, 0.18))
-		text(("> " if on else "   ") + g.body.item_name(it), row, Color("ffff88") if on else Color(1, 1, 1, 0.7), 13)
+			draw_rect(Rect2(x - 6, y - 13, w, 17), Color(1, 1, 0.53, 0.18))
+		var lb := item_label(it)
+		text(("> " if on else "   ") + lb[0], Vector2(x, y), Color("ffff88") if on else Color(lb[1], 0.75), 13)
 
 # Surgeon: from afar just what it is; up close, what each side could lose and what you get.
 func _draw_altar() -> void:

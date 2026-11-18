@@ -53,6 +53,14 @@ func _shot_setup() -> void:
 	g.add_item({kind = "part", pk = "hand", type = "claw", fingers = 0}, 3, 8)
 	g.add_item({kind = "weapon", id = "shotgun"}, -4, 7)
 	g.P.inv = 99.0
+	if OS.get_cmdline_user_args().has("picker"):  # a pile of loot at the player's feet, second item chosen
+		for it in [{kind = "weapon", id = "pistol"}, {kind = "part", pk = "eye", type = "cat"}, {kind = "heart"}, {kind = "scrap"}]:
+			g.add_item(it, g.P.x + randf_range(-0.6, 0.6), g.P.z + randf_range(-0.6, 0.6))
+		g.player.cycle_pick(1)
+	if OS.get_cmdline_user_args().has("surgeon"):  # standing at the altar, no enemies
+		g.enemies.clear()
+		g.items.clear()
+		g.altar = {x = g.P.x, z = g.P.z - 2.5, used = false, m = null}
 
 func _run(n: int) -> void:
 	for i in n:
