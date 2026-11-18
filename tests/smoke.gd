@@ -598,6 +598,17 @@ func smoke() -> void:
 	test_room("fight", 6)
 	_run(300)
 	print("late rooms: %s" % [g.enemies.map(func(e): return e.type)])
+	# spikes never land in front of a door, where the player arrives
+	g.floor_n = 4
+	var spiked := 0
+	var in_lane := 0
+	for i in 200:
+		test_room("fight", 6)
+		spiked += g.spikes.size()
+		for s in g.spikes:
+			if g.world.in_door_lane(s.x, s.z, s.w, s.h):
+				in_lane += 1
+	print("spikes: %d placed in 200 rooms, %d in a door lane" % [spiked, in_lane])
 	g.tests_parts.smoke_parts()
 	g.tests_parts.smoke_limbs()
 	g.debug_room.start_debug()

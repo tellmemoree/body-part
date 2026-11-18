@@ -197,6 +197,8 @@ const ROOMS := {
 const LOCK_CHANCE := [0.1, 0.2, 0.3, 0.3, 0.35]
 const DARK_LOCK := [0.3, 0.5, 0.7, 0.85, 1.0]
 const FIGHT_CHEST := 0.35  # chance that a fight room has a chest
+const DOOR_LANE := 6.0  # width of the spike-free strip in front of each door
+const DOOR_LANE_DEPTH := 8.0  # how far that strip reaches into the room from the wall
 
 const DOOR_UNKNOWN := "707078"  # door to a room the player cannot identify yet ("?")
 const DOOR_COLOR := {"start": "55556a", "debug": "55556a", "exit": "dd3333", "fight": "3a8a5a", "treasure": "b9892f", "surgeon": "8a4a9a", "dark": "2a2a44", "elite": "aa5522"}

@@ -298,8 +298,22 @@ func populate(r: Dictionary) -> void:
 		g.chests.append({x = v.x, z = v.y, type = ct, open = false, gone = false, hp = D.CHEST_HP, flash = 0.0, m = null})
 	if df >= 2:
 		for i in randi_range(0, 3):
-			var v := free_spot(5, 5)
-			g.spikes.append({x = v.x, z = v.y, w = randf_range(2, 4), h = randf_range(2, 4), m = null})
+			var w := randf_range(2, 4)
+			var h := randf_range(2, 4)
+			for t in 20:
+				var v := free_spot(5, 5)
+				if not in_door_lane(v.x, v.y, w, h):
+					g.spikes.append({x = v.x, z = v.y, w = w, h = h, m = null})
+					break
+
+# Whether a w x h rectangle centred at (x, z) touches the strip of floor in front of a door,
+# where the player lands when walking in (DOOR_LANE wide, DOOR_LANE_DEPTH deep, on all four walls).
+func in_door_lane(x: float, z: float, w: float, h: float) -> bool:
+	var lw: float = D.DOOR_LANE / 2
+	var ld: float = D.DOOR_LANE_DEPTH
+	if absf(x) - w / 2 < lw and absf(z) + h / 2 > g.AH - ld:
+		return true
+	return absf(z) - h / 2 < lw and absf(x) + w / 2 > g.AW - ld
 
 func clear_room() -> void:
 	g.room.cleared = true

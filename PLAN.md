@@ -126,6 +126,17 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
 
 ## Next up
 
+- [ ] Playtest round 3 (first outside playtester)
+  - [x] Spikes no longer land in the strip in front of a door (`DOOR_LANE`, `DOOR_LANE_DEPTH`):
+        walking back into a room could drop you straight onto spikes
+  - [ ] Loot picker: when several things lie together (a big drop from a kill), list them and
+        let the mouse wheel choose which one Q / E takes
+  - [ ] Camera: free inside cleared rooms; in a fight it stays inside the room. Unentered rooms
+        are hidden under fog until you walk in. Rooms bigger than the screen. Belongs with
+        "Seamless floors" below
+  - [ ] Surgeon is unclear: say what it takes and what you get before you offer
+  - [ ] Upgrade gamble (idea): try to improve an item, 4 tries at 80 / 55 / 35 / 20%; success
+        upgrades it and allows the next try, failure breaks it
 - [ ] Chests and rarity (designed, not built)
   - Tiers (working names): common, rare, legendary; the rarer the chest, the better the items
   - Rarity is visible on the chest (for example wood, steel, gold); odds improve on deeper floors
