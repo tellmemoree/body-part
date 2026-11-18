@@ -260,7 +260,7 @@ func _draw_hud() -> void:
 		if bar[i][2] > 0:
 			draw_rect(Rect2(x, by, 155 * minf(1.0, bar[i][2]), 34), Color(1, 1, 1, 0.15))
 		text("%s: %s" % [bar[i][0], bar[i][1]], Vector2(x + 77, by + 23), Color("ee4444") if bar[i][1] == "-" else Color.WHITE, 13, true)
-	text("WASD move / Q,E use left,right side / wheel pick loot / F jaw / R reload / Tab body & map", Vector2(16, H - 16), Color("777777"), 13)
+	_draw_controls(H)
 	if g.msg_t > 0 and g.msg != "":
 		var w := font.get_string_size(g.msg, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x + 24
 		draw_rect(Rect2(W / 2 - w / 2, H - 98, w, 32), Color(0, 0, 0, 0.7))
@@ -276,6 +276,19 @@ func _draw_hud() -> void:
 		else:
 			text("You fell apart on floor %d" % g.floor_n, Vector2(W / 2, H / 2 - 10), Color.WHITE, 36, true)
 			text("%d kills - press R to try again" % g.kills, Vector2(W / 2, H / 2 + 28), Color.WHITE, 18, true)
+
+# Controls list in the bottom left corner: key column, then what it does.
+func _draw_controls(H: float) -> void:
+	var row := 17.0
+	var top := H - 14 - D.CONTROLS.size() * row
+	var kw := 0.0
+	for c in D.CONTROLS:
+		kw = maxf(kw, font.get_string_size(c[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x)
+	draw_rect(Rect2(8, top - 8, kw + 150, D.CONTROLS.size() * row + 12), Color(0, 0, 0, 0.45))
+	for i in D.CONTROLS.size():
+		var y := top + 10 + i * row
+		text(D.CONTROLS[i][0], Vector2(16, y), Color("bbbbbb"), 12)
+		text(D.CONTROLS[i][1], Vector2(28 + kw, y), Color("888888"), 12)
 
 # Splits a text into lines no wider than w pixels.
 func wrap_text(t: String, w: float, fs: int) -> Array:

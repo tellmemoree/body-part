@@ -200,5 +200,18 @@ const FIGHT_CHEST := 0.35  # chance that a fight room has a chest
 const DOOR_LANE := 6.0  # width of the spike-free strip in front of each door
 const DOOR_LANE_DEPTH := 8.0  # how far that strip reaches into the room from the wall
 
+# Controls: [key, what it does]. Listed bottom left in play and on the main menu.
+const CONTROLS := [
+	["WASD", "move"],
+	["LMB / RMB", "left / right hand"],
+	["Q / E", "use left / right side"],
+	["Wheel", "pick loot"],
+	["Space", "legs"],
+	["F", "jaw"],
+	["R", "reload"],
+	["Tab", "body & map"],
+	["Esc", "pause"],
+]
+
 const DOOR_UNKNOWN := "707078"  # door to a room the player cannot identify yet ("?")
 const DOOR_COLOR := {"start": "55556a", "debug": "55556a", "exit": "dd3333", "fight": "3a8a5a", "treasure": "b9892f", "surgeon": "8a4a9a", "dark": "2a2a44", "elite": "aa5522"}

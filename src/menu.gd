@@ -1,7 +1,7 @@
 extends Control
 # Main menu and pause menu. The game node calls open(kind) / close().
 
-const CONTROLS := "WASD move   |   Left / right click: left / right hand   |   Q / E: use left / right side   |   Wheel: pick loot   |   F: jaw   |   Space: legs   |   R: reload   |   Tab: body & map   |   Esc: pause"
+const D = preload("res://src/data.gd")
 
 var g
 var title: Label
@@ -35,7 +35,7 @@ func _ready() -> void:
 	gap2.custom_minimum_size = Vector2(0, 18)
 	v.add_child(gap2)
 	var help := _label(14, Color("888899"))
-	help.text = CONTROLS
+	help.text = "   |   ".join(PackedStringArray(D.CONTROLS.map(func(c): return "%s: %s" % c)))
 	v.add_child(help)
 	visible = false
 
