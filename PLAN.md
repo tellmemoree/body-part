@@ -133,9 +133,9 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
         rows, `PICK_ROWS` in `hud.gd`), the item Q / E will take is highlighted and ringed on the
         floor. Mouse wheel moves the choice; once chosen, Q / E takes exactly that item (or says why
         it cannot). Without the wheel it works as before: nearest usable item first
-  - [ ] Camera: free inside cleared rooms; in a fight it stays inside the room. Unentered rooms
-        are hidden under fog until you walk in. Rooms bigger than the screen. Belongs with
-        "Seamless floors" below
+  - [x] Camera: free inside cleared rooms and corridors; in a fight it stays inside the room.
+        Unentered rooms are hidden under fog until you walk in (see Seamless floors)
+  - [ ] Rooms bigger than the screen
   - [x] Surgeon explains itself: from afar "trades one flesh part for two rare items"; up close,
         per side, which parts it could take ("Q: left side - your eye, ear or leg"), greyed out
         when that side has nothing it will take
@@ -152,11 +152,20 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
 - [ ] More room variety: hand-made room templates, pits, destructible cover, props
 - [ ] Ranged enemies should check line of sight before shooting; melee and hook reach through
       walls and should not
-- [ ] Door collision (from playtest, screenshot of a side door): the door block sticks out of the
-      wall at an angle and the player can stand inside it. Doors need to sit flush in the wall
-      and block the player like walls do until they are opened
-- [ ] Seamless floors: corridors between rooms and a scrolling camera, instead of the current
-      one-room-per-screen transitions
+- [x] Door collision (from playtest): doors now sit flush in a gap in the wall and block like
+      walls until opened (seamless floors, step 1)
+- [~] Seamless floors
+  - [x] Step 1: the whole floor is built at once, rooms in a grid (`CELL_W` x `CELL_H`), joined by
+        corridors through `DOOR_W` gaps in the walls. Opening a door no longer moves you: you walk
+        down the corridor and into the next room. Doors sit flush in the wall (fixes the door
+        collision note above). Unvisited rooms are covered by fog. The camera follows you and stays
+        inside the room during a fight. Old start-of-run tutorial message removed
+  - [ ] Step 2: rooms bigger than the screen (scale `gen_layout` sizes, retune spawn counts)
+  - [ ] Step 3: show the loot, chests and altar of visited rooms you can see from outside (today
+        only the current room's things are drawn, so a room you just left looks empty)
+  - [ ] Step 4: decide what corridors are for: enemies that follow you out, traps, short / bent
+        corridors instead of one fixed grid spacing
+  - [ ] Dark rooms dim the whole floor while you are in one (lighting is still global)
 - [ ] Real bosses, one per floor, replacing the elite brute guardian
 - [ ] Shop room and a currency
 - [ ] Sound: weapons, hits, flesh, footsteps, ambience, music
@@ -195,5 +204,5 @@ _Add what feels off here after each session._
 
 - Play: open the project in Godot, press F5.
 - Mechanics test: `Godot --headless --path . -- --smoke [--seed N]` (same seed, same output)
-- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump|chests|picker|surgeon] [pillars|corners|vbars|hbars|crates]`
+- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump|chests|picker|surgeon|corridor] [pillars|corners|vbars|hbars|crates]`
 - Content tables (parts, guns, enemies, rooms) are in `src/data.gd`. How the code is organised: `ARCHITECTURE.md`.

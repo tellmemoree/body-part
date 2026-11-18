@@ -235,7 +235,7 @@ func ability() -> void:
 			cd = 1.5
 	g.P.cdSp = cd * lung / g.body.haste()
 
-# Walking, dashes and leg abilities, knockback, treads, walking through open doors.
+# Walking, dashes and leg abilities, knockback, treads, walking through corridors into the next room.
 func update_movement(dt: float) -> void:
 	var L := g.body.legs()
 	var dir := move_input()
@@ -319,10 +319,7 @@ func update_movement(dt: float) -> void:
 	g.clamp_pos(g.P)
 	if g.enemies.is_empty() and not g.debug:
 		g.loot.rescue_hand()  # no hands outside a fight (grenade, rot, trap): never leave the player stuck
-	if g.P.dash == null and g.enemies.is_empty() and g.pending_room == null:
-		for d in g.doors:  # opened doors can simply be walked through
-			if g.room.opened.get(d.dir, false) and g.d2(d, g.P) < 1.7 and dir.dot(Vector2(Game.DIRS[d.dir])) > 0.5:
-				g.pending_room = d
+	g.world.check_transit()  # walked out of a corridor into the next room
 
 # Held clicks (with piston charge), reload timers, jaw, laser eye.
 func update_hands(dt: float) -> void:

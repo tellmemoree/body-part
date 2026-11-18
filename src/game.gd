@@ -58,7 +58,6 @@ var time := 0.0
 var msg := ""
 var msg_t := 0.0
 var dirty := true
-var pending_room = null
 var pick = null  # the item Q / E takes when several are in reach (mouse wheel changes it)
 var pick_chosen := false  # true once the wheel moved it: then Q / E takes exactly that one
 var kills := 0
@@ -95,7 +94,7 @@ var cam: Camera3D
 var cam_t := Vector2.ZERO
 var room_g: Node3D
 var pg: Node3D
-var floor_mesh: MeshInstance3D
+var floor_g: Node3D  # the whole floor's rooms and corridors, shifted so the current room is at the origin
 var sun: DirectionalLight3D
 var env: Environment
 var vision: ColorRect
@@ -204,6 +203,8 @@ func _build_world() -> void:
 	cam.current = true
 	cam.position = Vector3(0, 30, 19)
 	cam.look_at(Vector3.ZERO)
+	floor_g = Node3D.new()
+	add_child(floor_g)
 	room_g = Node3D.new()
 	add_child(room_g)
 	pg = Node3D.new()
@@ -312,8 +313,32 @@ func clamp_pos(o) -> void:
 					o.x += px * (1.0 if o.x >= b.x else -1.0)
 				else:
 					o.z += pz * (1.0 if o.z >= b.z else -1.0)
+	if is_same(o, P) and in_corridor():
+		return
 	o.x = clampf(o.x, -AW + 1, AW - 1)
 	o.z = clampf(o.z, -AH + 1, AH - 1)
+
+# The player may leave the room through an open doorway once no enemies are left: keeps them
+# inside the doorway and its corridor and returns true, or returns false when they are not in one.
+func in_corridor() -> bool:
+	if not enemies.is_empty():
+		return false
+	var lane: float = D.DOOR_W / 2 - 0.6
+	for d in doors:
+		if not room.opened.get(d.dir, false):
+			continue
+		var v: Vector2i = DIRS[d.dir]
+		var across: float = P.z if v.x != 0 else P.x
+		if world.past_wall(d) > -1.0 and absf(across) < lane + 0.3:
+			across = clampf(across, -lane, lane)
+			if v.x != 0:
+				P.z = across
+				P.x = clampf(P.x, -AW - d.len - 1, AW + d.len + 1)
+			else:
+				P.x = across
+				P.z = clampf(P.z, -AH - d.len - 1, AH + d.len + 1)
+			return true
+	return false
 
 func in_block(x: float, z: float, margin: float) -> bool:
 	for b in room.get("blocks", []):
@@ -382,7 +407,6 @@ func new_game() -> void:
 	kills = 0
 	slow_t = 0.0
 	dirty = true
-	pending_room = null
 	won = false
 	room = {}
 	world.next_floor()
@@ -422,7 +446,3 @@ func update(dt: float) -> void:
 	fx = fx.filter(func(f): return f.t > 0)
 	if enemies.is_empty() and not room.cleared:
 		world.clear_room()
-	if pending_room != null:
-		var pd = pending_room
-		pending_room = null
-		world.enter_room(pd.to, pd.dir)

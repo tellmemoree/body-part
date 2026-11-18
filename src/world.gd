@@ -84,16 +84,104 @@ func gen_layout(r: Dictionary) -> void:
 				if not clash:
 					r.blocks.append({x = x, z = z, w = w, h = h, ht = 1.3, c = "6b5030"})
 
-func build_room_mesh(floor_col: Color) -> void:
-	g.floor_mesh = Shapes.box(g.AW * 2, 0.2, g.AH * 2, floor_col, 0, -0.1, 0)
-	g.room_g.add_child(g.floor_mesh)
-	g.room_g.add_child(Shapes.box(g.AW * 2 + 1, 2, 0.5, "44445a", 0, 1, -g.AH - 0.25))
-	g.room_g.add_child(Shapes.box(g.AW * 2 + 1, 2, 0.5, "44445a", 0, 1, g.AH + 0.25))
-	g.room_g.add_child(Shapes.box(0.5, 2, g.AH * 2, "44445a", -g.AW - 0.25, 1, 0))
-	g.room_g.add_child(Shapes.box(0.5, 2, g.AH * 2, "44445a", g.AW + 0.25, 1, 0))
-	for b in g.room.blocks:
-		b.m = Shapes.box(b.w, b.ht, b.h, b.c, b.x, b.ht / 2, b.z)
-		g.room_g.add_child(b.m)
+# Where a room's centre sits in the floor's world (rooms are laid out on a grid of cells).
+func room_off(r: Dictionary) -> Vector2:
+	return Vector2(r.gx * D.CELL_W, r.gy * D.CELL_H)
+
+func floor_color(r: Dictionary) -> Color:
+	if r.type == "dark":
+		return Color("15151c")
+	return Color("2c2430") if r.type == "surgeon" else Color("2a2a36")
+
+# Builds the whole floor at once: every room (floor, walls with doorways, obstacles, doors, fog)
+# and the corridors between them. All of it hangs under g.floor_g in world coordinates.
+func build_floor() -> void:
+	for c in g.floor_g.get_children():
+		c.queue_free()
+	for r in g.rooms:
+		r.erase("geo")
+		build_room_geo(r)
+	for r in g.rooms:
+		for dir in ["E", "S"]:
+			if r.links.has(dir):
+				build_corridor(r, g.rooms[r.links[dir]], dir)
+
+func build_room_geo(r: Dictionary) -> void:
+	r.geo = true
+	var o := room_off(r)
+	var hw: float = r.hw
+	var hh: float = r.hh
+	var wall := "44445a"
+	g.floor_g.add_child(Shapes.box(hw * 2, 0.2, hh * 2, floor_color(r), o.x, -0.1, o.y))
+	var gap := D.DOOR_W / 2
+	for dir in ["N", "S", "E", "W"]:
+		var v: Vector2i = Game.DIRS[dir]
+		var horiz := v.y != 0  # N / S walls run along x
+		var half: float = hw if horiz else hh
+		var wx: float = o.x + v.x * (hw + 0.25)
+		var wz: float = o.y + v.y * (hh + 0.25)
+		var spans := [[-half - 0.5, half + 0.5]]
+		if r.links.has(dir):
+			spans = [[-half - 0.5, -gap], [gap, half + 0.5]]
+		for sp in spans:
+			var ln: float = sp[1] - sp[0]
+			var mid: float = (sp[0] + sp[1]) / 2
+			if horiz:
+				g.floor_g.add_child(Shapes.box(ln, 2, 0.5, wall, o.x + mid, 1, wz))
+			else:
+				g.floor_g.add_child(Shapes.box(0.5, 2, ln, wall, wx, 1, o.y + mid))
+	r.door_m = {}
+	for dir in r.links:
+		var v: Vector2i = Game.DIRS[dir]
+		var horiz := v.y != 0
+		var dm := Shapes.box(D.DOOR_W if horiz else 0.5, 2.6, 0.5 if horiz else D.DOOR_W, "333333",
+			o.x + v.x * (hw + 0.25), 1.3, o.y + v.y * (hh + 0.25))
+		g.floor_g.add_child(dm)
+		r.door_m[dir] = dm
+	for b in r.blocks:
+		b.m = Shapes.box(b.w, b.ht, b.h, b.c, o.x + b.x, b.ht / 2, o.y + b.z)
+		b.m.visible = r.visited
+		g.floor_g.add_child(b.m)
+	var fog := Shapes.box(hw * 2, 2.05, hh * 2, D.FOG, o.x, 1.025, o.y)
+	fog.mesh.material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fog.visible = not r.visited
+	g.floor_g.add_child(fog)
+	r.fog_m = fog
+
+# A straight corridor from room a's doorway to room b's (b lies in direction dir from a).
+func build_corridor(a: Dictionary, b: Dictionary, dir: String) -> void:
+	var oa := room_off(a)
+	var v: Vector2i = Game.DIRS[dir]
+	var horiz := v.x != 0  # an E / W corridor runs along x
+	var s0: float = (oa.x + a.hw + 0.5) if horiz else (oa.y + a.hh + 0.5)
+	var ln := corridor_len(a, dir) - 1.0
+	var mid := s0 + ln / 2
+	var wall := "44445a"
+	var gap := D.DOOR_W / 2 + 0.25
+	if horiz:
+		g.floor_g.add_child(Shapes.box(ln + 0.2, 0.2, D.DOOR_W, "24242e", mid, -0.1, oa.y))
+		for sd in [-1, 1]:
+			g.floor_g.add_child(Shapes.box(ln, 2, 0.5, wall, mid, 1, oa.y + sd * gap))
+	else:
+		g.floor_g.add_child(Shapes.box(D.DOOR_W, 0.2, ln + 0.2, "24242e", oa.x, -0.1, mid))
+		for sd in [-1, 1]:
+			g.floor_g.add_child(Shapes.box(0.5, 2, ln, wall, oa.x + sd * gap, 1, mid))
+
+# Distance from room r's inner wall line to the next room's inner wall line through the door in dir.
+func corridor_len(r: Dictionary, dir: String) -> float:
+	var o: Dictionary = g.rooms[r.links[dir]]
+	var v: Vector2i = Game.DIRS[dir]
+	if v.x != 0:
+		return absf(room_off(o).x - room_off(r).x) - r.hw - o.hw
+	return absf(room_off(o).y - room_off(r).y) - r.hh - o.hh
+
+# Shows a room's obstacles and lifts its fog once it has been visited.
+func reveal(r: Dictionary) -> void:
+	if r.get("fog_m") != null:
+		r.fog_m.visible = false
+	for b in r.blocks:
+		if b.get("m") != null:
+			b.m.visible = true
 
 func link_rooms(a: Dictionary, b: Dictionary, dir: String) -> void:
 	a.links[dir] = b.idx
@@ -163,6 +251,7 @@ func next_floor() -> void:
 	g.P.regrow = true  # lizard gland recharges
 	g.room = {}
 	gen_floor()
+	build_floor()
 	enter_room(g.rooms[0], "")
 
 func stash_room() -> void:
@@ -192,13 +281,25 @@ func free_spot(mx: float, mz: float) -> Vector2:
 			break
 	return v
 
-func enter_room(r: Dictionary, from_dir: String) -> void:
+# Makes r the current room. Game logic runs in the current room's own coordinates (its centre is 0, 0);
+# the floor's geometry is shifted so the room sits at the origin.
+# walked = true: the player came through a corridor, so they keep their place in the world
+# (their position and the camera are shifted by the same amount and nothing visibly jumps).
+# Otherwise the player is put just inside the wall opposite from_dir (or in the middle).
+func enter_room(r: Dictionary, from_dir: String, walked := false) -> void:
+	var shift := Vector2.ZERO
+	if walked and not g.room.is_empty():
+		shift = room_off(g.room) - room_off(r)
 	stash_room()
 	g.room = r
 	g.AW = r.hw
 	g.AH = r.hh
 	for c in g.room_g.get_children():
 		c.queue_free()
+	if not r.has("geo"):  # a room made outside a floor (tests): build it on the spot
+		build_room_geo(r)
+	var o := room_off(r)
+	g.floor_g.position = Vector3(-o.x, 0, -o.y)
 	g.enemies = []
 	g.bullets = []
 	g.fx = []
@@ -208,9 +309,6 @@ func enter_room(r: Dictionary, from_dir: String) -> void:
 	for k in ["la", "ra"]:
 		if g.P.parts[k] != null:
 			g.P.parts[k].out = false
-	g.P.frog = 0.0
-	g.P.vx = 0.0
-	g.P.vz = 0.0
 	g.P.plate = g.body.skin_is("plated")
 	g.dirty = true
 	g.items = r.items
@@ -218,38 +316,61 @@ func enter_room(r: Dictionary, from_dir: String) -> void:
 	g.spikes = r.spikes
 	g.altar = r.altar
 	g.stairs = r.stairs
-	g.P.x = 0.0
-	g.P.z = 3.0
-	match from_dir:  # the direction we walked: arrive at the opposite wall
-		"N":
-			g.P.z = g.AH - 2.5
-		"S":
-			g.P.z = -g.AH + 2.5
-		"E":
-			g.P.x = -g.AW + 2.5
-			g.P.z = 0.0
-		"W":
-			g.P.x = g.AW - 2.5
-			g.P.z = 0.0
-	g.P.y = 0.0
-	g.P.dash = null
-	g.P.kx = 0.0
-	g.P.kz = 0.0
+	if walked:
+		g.P.x += shift.x
+		g.P.z += shift.y
+		g.cam_t += shift
+	else:
+		g.P.frog = 0.0
+		g.P.vx = 0.0
+		g.P.vz = 0.0
+		g.P.x = 0.0
+		g.P.z = 3.0
+		match from_dir:  # the direction we walked: arrive at the opposite wall
+			"N":
+				g.P.z = g.AH - 2.5
+			"S":
+				g.P.z = -g.AH + 2.5
+			"E":
+				g.P.x = -g.AW + 2.5
+				g.P.z = 0.0
+			"W":
+				g.P.x = g.AW - 2.5
+				g.P.z = 0.0
+		g.P.y = 0.0
+		g.P.dash = null
+		g.P.kx = 0.0
+		g.P.kz = 0.0
+		g.cam_t = Vector2(g.P.x, g.P.z)
 	var dark: bool = r.type == "dark"
-	build_room_mesh(Color("15151c") if dark else (Color("2c2430") if r.type == "surgeon" else Color("2a2a36")))
 	g.ai.build_solid()
 	g.env.ambient_light_energy = 0.15 if dark else 0.5
 	g.sun.light_energy = 0.25 if dark else 1.0
 	g.doors = []
 	for dir in r.links:
 		var v: Vector2i = Game.DIRS[dir]
-		g.doors.append({x = v.x * g.AW, z = v.y * g.AH, dir = dir, to = g.rooms[r.links[dir]], m = null})
+		g.doors.append({x = v.x * g.AW, z = v.y * g.AH, dir = dir, to = g.rooms[r.links[dir]], len = corridor_len(r, dir)})
 	if not r.visited:
 		r.visited = true
 		populate(r)
+	reveal(r)
 	if g.enemies.is_empty() and not r.cleared:
 		clear_room()
 	g.loot.rescue_hand()
+
+# Walking through a corridor: once the player passes the far room's wall line, that room becomes current.
+func check_transit() -> void:
+	if not g.enemies.is_empty():
+		return
+	for d in g.doors:
+		if g.room.opened.get(d.dir, false) and past_wall(d) > d.len:
+			enter_room(d.to, d.dir, true)
+			return
+
+# How far the player is beyond the wall that holds door d (negative while still inside the room).
+func past_wall(d: Dictionary) -> float:
+	var v: Vector2i = Game.DIRS[d.dir]
+	return (g.P.x * v.x - g.AW) if v.x != 0 else (g.P.z * v.y - g.AH)
 
 func populate(r: Dictionary) -> void:
 	var type: String = r.type
@@ -358,9 +479,10 @@ func try_door(d: Dictionary) -> void:
 		if g.msg_t <= 0:
 			g.say("The doors are sealed until the room is clear.", 1.5)
 		return
+	if not g.room.opened.get(d.dir, false):
+		g.say("The door swings open.", 1.5)
 	g.room.opened[d.dir] = true
 	d.to.opened[Game.OPP[d.dir]] = true
-	g.pending_room = d
 
 func descend() -> void:
 	if g.floor_n >= Game.FLOORS:

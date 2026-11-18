@@ -197,6 +197,12 @@ const ROOMS := {
 const LOCK_CHANCE := [0.1, 0.2, 0.3, 0.3, 0.35]
 const DARK_LOCK := [0.3, 0.5, 0.7, 0.85, 1.0]
 const FIGHT_CHEST := 0.35  # chance that a fight room has a chest
+# Seamless floors: every room sits in a grid cell this big (world units), joined by corridors.
+# A cell must hold the largest room (40 x 26) plus the shortest corridor.
+const CELL_W := 48.0
+const CELL_H := 34.0
+const DOOR_W := 4.0  # width of a doorway and its corridor
+const FOG := "0c0c10"  # unvisited rooms are hidden under a block of this colour (the background)
 const DOOR_LANE := 6.0  # width of the spike-free strip in front of each door
 const DOOR_LANE_DEPTH := 8.0  # how far that strip reaches into the room from the wall
 

@@ -184,11 +184,6 @@ func mk_spike(s: Dictionary) -> Node3D:
 		node.add_child(Shapes.cone(0.15, 0.5, "aa3333", randf_range(-s.w / 2 + 0.2, s.w / 2 - 0.2), 0.25, randf_range(-s.h / 2 + 0.2, s.h / 2 - 0.2)))
 	return node
 
-func mk_door(d: Dictionary) -> Node3D:
-	var horiz: bool = d.dir == "N" or d.dir == "S"
-	var off := Vector2(Game.DIRS[d.dir]) * 0.3
-	return Shapes.grp([Shapes.box(3.2 if horiz else 0.6, 3, 0.6 if horiz else 3.2, "333333", off.x, 1.5, off.y)])
-
 func sync(list: Array, mk: Callable) -> void:
 	for o in list:
 		if o.get("m") == null:
@@ -205,7 +200,6 @@ func render() -> void:
 	sync(g.chests, mk_chest)
 	sync(g.bullets, mk_bullet)
 	sync(g.spikes, mk_spike)
-	sync(g.doors, mk_door)
 	sync(g.flyers, mk_flyer)
 	for f in g.flyers:
 		f.m.rotation.y = g.time * 22
@@ -220,13 +214,7 @@ func render() -> void:
 		lid.position = Vector3(0, 1.05, -0.75) if c.open else Vector3(0, 0.85, 0)
 		lid.rotation.x = 1.25 if c.open else 0.0
 		c.m.get_child(2).visible = c.open
-	for d in g.doors:
-		var col: String = D.DOOR_COLOR[d.to.type] if g.world.room_known(d.to) else D.DOOR_UNKNOWN
-		if not g.enemies.is_empty():
-			col = "661111"
-		elif g.room.opened.get(d.dir, false):
-			col = "15151a"
-		d.m.get_child(0).mesh.material.albedo_color = Color(col)
+	update_doors()
 	if g.stairs != null and g.stairs.m == null:
 		g.stairs.m = Shapes.grp([Shapes.box(3.4, 0.1, 3.4, "050505", 0, 0.05, 0), Shapes.box(3.4, 0.5, 0.8, "8888aa", 0, 0.25, -1.3), Shapes.box(3.4, 0.3, 0.8, "666688", 0, 0.15, -0.5)])
 		g.room_g.add_child(g.stairs.m)
@@ -249,11 +237,7 @@ func render() -> void:
 	g.pg.rotation.y = -g.P.aim + PI / 2
 	g.pg.rotation.x = 1.2 if g.body.legs().is_empty() else 0.0
 	g.pg.visible = not (g.P.inv > 0 and int(g.time * 20) % 2 == 1)
-	g.cam_t.x += (g.P.x * 0.85 - g.cam_t.x) * 0.1
-	g.cam_t.y += (g.P.z * 0.85 - g.cam_t.y) * 0.1
-	var far := 1.25 if g.body.has_type(["le", "re"], "sniper") else 1.0  # sniper eye pulls the camera back
-	g.cam.position = Vector3(g.cam_t.x, 30 * far, g.cam_t.y + 19 * far)
-	g.cam.look_at(Vector3(g.cam_t.x, 0, g.cam_t.y))
+	update_camera()
 	# vision
 	var sm: ShaderMaterial = g.vision.material
 	g.vis_radius = -1.0
@@ -269,6 +253,61 @@ func render() -> void:
 	sm.set_shader_parameter("vsize", g.get_viewport().get_visible_rect().size)
 	sm.set_shader_parameter("radius", g.vis_radius)
 	sm.set_shader_parameter("side", g.vis_side)
+
+# Doors of every room on the floor. Open ones vanish (the doorway is a gap in the wall).
+# Closed doors of the current room: the colour of the room behind them, red while sealed.
+func update_doors() -> void:
+	for r in g.rooms + ([g.room] if not g.rooms.has(g.room) else []):
+		for dir in r.get("door_m", {}):
+			var dm: MeshInstance3D = r.door_m[dir]
+			dm.visible = not r.opened.get(dir, false)
+			if not dm.visible:
+				continue
+			var to: Dictionary = g.rooms[r.links[dir]]
+			var col: String = D.DOOR_COLOR[to.type] if g.world.room_known(to) else D.DOOR_UNKNOWN
+			if r != g.room:
+				col = "333333"
+			elif not g.enemies.is_empty():
+				col = "661111"
+			dm.mesh.material.albedo_color = Color(col)
+
+# Follows the player. During a fight the view stays inside the room: it only moves as far as it can
+# without showing what lies past the walls (a room smaller than the view stays centred).
+func update_camera() -> void:
+	var far := 1.25 if g.body.has_type(["le", "re"], "sniper") else 1.0  # sniper eye pulls the camera back
+	var want := Vector2(g.P.x, g.P.z)
+	if not g.enemies.is_empty():
+		var ext := view_extent(far)  # ground visible around the look point: x min, x max, z min, z max
+		want.x = _fit(want.x, -g.AW - 0.5 - ext[0], g.AW + 0.5 - ext[1])
+		want.y = _fit(want.y, -g.AH - 0.5 - ext[2], g.AH + 0.5 - ext[3])
+	g.cam_t += (want - g.cam_t) * 0.1
+	g.cam.position = Vector3(g.cam_t.x, 30 * far, g.cam_t.y + 19 * far)
+	g.cam.look_at(Vector3(g.cam_t.x, 0, g.cam_t.y))
+
+func _fit(v: float, lo: float, hi: float) -> float:
+	return (lo + hi) / 2 if lo > hi else clampf(v, lo, hi)
+
+# How much floor the camera shows around the point it looks at, as [x min, x max, z min, z max].
+# Found by casting the four screen corners onto the floor from a camera looking at the origin.
+func view_extent(far: float) -> Array:
+	var sz := g.get_viewport().get_visible_rect().size
+	var asp := sz.x / maxf(1.0, sz.y)
+	var pos := Vector3(0, 30 * far, 19 * far)
+	var fwd := -pos.normalized()
+	var right := fwd.cross(Vector3.UP).normalized()
+	var up := right.cross(fwd)
+	var ty := tan(deg_to_rad(g.cam.fov) / 2)
+	var ext := [INF, -INF, INF, -INF]
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			var ray: Vector3 = (fwd + right * sx * ty * asp + up * sy * ty).normalized()
+			var t: float = -pos.y / ray.y
+			var hit: Vector3 = pos + ray * t
+			ext[0] = minf(ext[0], hit.x)
+			ext[1] = maxf(ext[1], hit.x)
+			ext[2] = minf(ext[2], hit.z)
+			ext[3] = maxf(ext[3], hit.z)
+	return ext
 
 # Adds one hand's shape at the end of an arm (x = side offset, z = arm tip).
 func add_hand(h: Dictionary, x: float, z: float, show_gun: bool, slot := "") -> void:

@@ -24,8 +24,8 @@ What the game is and what is planned lives in [PLAN.md](PLAN.md); this file cove
 | `src/combat.gd` | ~280 | Damage to enemies: `hit`, `melee`, `shoot`, `explode`, status effects, cutting enemy limbs, bullets and thrown arms every frame |
 | `src/enemies.gd` | ~210 | Enemies: `spawn`, pathfinding, their behaviour every frame |
 | `src/loot.gd` | ~200 | Loot rolls, enemy drops, opening / smashing / breaking chests, mimics, the surgeon, the stray-hand rescue |
-| `src/world.gd` | ~390 | Floors and rooms: generation, layouts, entering rooms, populating them, clearing, doors, stairs, floor hazards |
-| `src/view.gd` | ~320 | Meshes for the player and everything in the room, the camera, the vision overlay |
+| `src/world.gd` | ~500 | Floors and rooms: generation, layouts, floor geometry (rooms, corridors, fog), entering rooms, walking between them, populating, clearing, doors, stairs, floor hazards |
+| `src/view.gd` | ~370 | Meshes for the player and everything in the room, doors, the camera, the vision overlay |
 | `src/shapes.gd` | ~50 | Static mesh helpers: `box`, `ball`, `cyl`, `cone`, `grp`, `mat` |
 | `src/debug_room.gd` | ~120 | The debug room and its keys |
 | `src/data.gd` | ~200 | Content and tuning tables only (parts, guns, enemies, rooms, drop rates). No logic |
@@ -81,8 +81,10 @@ so nothing depends on the editor's global class cache.
 Main (Node3D, src/game.gd)
 ├── WorldEnvironment        background colour, ambient light (dimmed in dark rooms)
 ├── DirectionalLight3D sun  shadows; dimmed in dark rooms
-├── Camera3D cam            fixed tilted top-down view, follows the player
-├── Node3D room_g           room geometry + every enemy, item, chest, bullet, door mesh
+├── Camera3D cam            fixed tilted top-down view; follows the player, kept inside the room during a fight
+├── Node3D floor_g          the whole floor: every room's floor, walls, obstacles, doors, fog, and the corridors.
+│                           Built in world coordinates, shifted so the current room's centre is at the origin
+├── Node3D room_g           every enemy, item, chest, bullet, spike patch of the current room
 ├── Node3D pg               the player's body, rebuilt whenever a part changes
 └── CanvasLayer
     ├── Hud (world = true)  labels and effects projected onto the 3D world
@@ -102,13 +104,13 @@ _process(dt)                       src/game.gd
 ├── dt capped at 0.05 s
 ├── update(dt)                     only when state == "play" and the run is not over
 │   ├── timers, aim (mouse ray onto the ground plane)
-│   ├── player.update_movement     walking, dashes, leg abilities, knockback, treads, walking through doors
+│   ├── player.update_movement     walking, dashes, leg abilities, knockback, treads, corridors (world.check_transit)
 │   ├── player.update_hands        held clicks and piston charge, reload timers, jaw, laser eye
 │   ├── combat.update_flyers       thrown boomerang arms, burning ground
 │   ├── combat.update_bullets      both sides' bullets, homing, reflection, hits
 │   ├── ai.update_enemies          status effects, movement and attacks, pushing apart
 │   ├── world.update_hazards       spikes, magnet pull, parts rotting on the floor
-│   └── prune the dead, drops, queued mimics, room cleared?, change room if a door was used
+│   └── prune the dead, drops, queued mimics, room cleared?
 ├── view.render()                  every frame, also when paused (keeps meshes in sync)
 └── screenshot                     only in --shot mode: save the frame after 30 frames and quit
 ```
@@ -168,18 +170,33 @@ away). Always create them with `g.add_item()`.
 ## Floors and rooms (`src/world.gd`)
 
 ```
-new_game() → world.next_floor() → world.gen_floor() → world.enter_room(start)
-                                                         │
-          world.try_door() sets g.pending_room ──────────┘  (applied at the end of update())
+new_game() → world.next_floor() → world.gen_floor() → world.build_floor() → world.enter_room(start)
+                                                                                 │
+   player walks out of a corridor: world.check_transit() → enter_room(next, dir, walked = true)
 ```
+
+- Seamless floors: every room has a fixed place in one world, `room_off(r)` = its grid cell times
+  `CELL_W` / `CELL_H` (in `data.gd`). `build_floor()` builds all rooms (`build_room_geo()`: floor, walls
+  with a `DOOR_W` gap per link, a door mesh per link in `r.door_m`, obstacles, a fog block in `r.fog_m`)
+  and one corridor per link (`build_corridor()`) under `g.floor_g`.
+- Game logic still runs in the current room's own coordinates (centre 0, 0; walls at `AW` / `AH`).
+  `g.floor_g` is moved by minus the room's offset so the two line up. When the player walks into the
+  next room, `enter_room(..., walked = true)` shifts the player and `g.cam_t` by the difference between
+  the two rooms' offsets, so the screen does not jump.
+- Doors: `try_door()` only opens a door (both sides). An open door is a gap; `g.in_corridor()` (called
+  from `clamp_pos()` for the player only) lets the player into the doorway and its corridor while no
+  enemies are left. Once past the far room's wall line (`past_wall(d) > d.len`), that room becomes current.
+- Unvisited rooms are under a block of the background colour, their obstacles hidden; `reveal()` lifts it
+  on the first visit.
 
 - `gen_floor()`: grows 10–15 rooms on a grid from the start room, keeping it branchy, adds a few loops,
   measures each room's `depth` from the start (breadth-first), then assigns types: the deepest room
   (dead ends preferred) is the exit; two treasure rooms and a surgeon go to dead ends first; the rest
   roll for dark or elite. Each room then gets a size and obstacle style from `gen_layout()`.
 - `enter_room()`: saves the old room's items, chests, spikes, altar and stairs back into its dictionary
-  (`stash_room()`), clears all meshes, loads the new room's lists, places the player at the door they
-  came through, builds the floor and wall meshes and the pathfinding grid, and creates the doors.
+  (`stash_room()`), clears the room's entity meshes, loads the new room's lists, shifts `floor_g`, keeps
+  the player where they walked in (or places them at a wall when not walking, e.g. a new floor or tests),
+  builds the pathfinding grid and creates the door dictionaries (with `len`, the corridor length).
   On the first visit it calls `populate()` to spawn enemies, chests, spikes or the surgeon's altar.
 - Rooms remember their loot because the lists are stored in the room dictionary, not in nodes.
 - `diff()` is the difficulty number: it grows by 2.5 per floor and 0.4 per room of depth, and feeds
@@ -218,7 +235,11 @@ its behaviour at the place it affects (for example a new hand is a new branch in
 - The player model is rebuilt from scratch in `build_player()` whenever `g.dirty` is set.
 - Everything else is created once per object by `sync(list, mk_fn)`: if an object's `m` is `null`, the
   `mk_*` function builds a mesh group for it; every frame the mesh is moved to the object's `x`/`z`.
-  Per-frame changes (door colour, chest lid, enemy flash and scale) are applied in `render()` after sync.
+  Per-frame changes (chest lid, enemy flash and scale) are applied in `render()` after sync.
+- Doors of every room are updated in `update_doors()`: open ones are hidden, the current room's show the
+  colour of the room behind them (red while sealed).
+- Camera: `update_camera()` follows the player; while enemies are alive the target is clamped so the
+  view stays inside the room (`view_extent()` measures how much floor the camera shows).
 - Mesh helpers are static functions in `shapes.gd`: `Shapes.box()`, `Shapes.ball()`, `Shapes.cyl()`,
   `Shapes.cone()`, `Shapes.grp()`, `Shapes.mat()`.
 - Text over the world (item names, chest labels, door labels) is drawn in 2D by `hud.gd` using

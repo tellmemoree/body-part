@@ -30,6 +30,7 @@ func start_debug() -> void:
 	r.hw = 30.0
 	r.hh = 20.0
 	g.rooms.append(r)
+	g.world.build_floor()
 	g.world.enter_room(r, "")
 	g.P.x = 0.0
 	g.P.z = 15.0

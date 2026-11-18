@@ -57,6 +57,20 @@ func _shot_setup() -> void:
 		for it in [{kind = "weapon", id = "pistol"}, {kind = "part", pk = "eye", type = "cat"}, {kind = "heart"}, {kind = "scrap"}]:
 			g.add_item(it, g.P.x + randf_range(-0.6, 0.6), g.P.z + randf_range(-0.6, 0.6))
 		g.player.cycle_pick(1)
+	if OS.get_cmdline_user_args().has("corridor"):  # room cleared, every door open, halfway down a corridor
+		g.enemies.clear()
+		g.room.cleared = true
+		for d in g.doors:
+			g.world.try_door(d)
+		var cd: Dictionary = g.doors[0]
+		for d in g.doors:  # prefer a corridor that leads to a room not yet seen, to show its fog
+			if not d.to.visited:
+				cd = d
+		var v: Vector2i = Game.DIRS[cd.dir]
+		g.P.x = v.x * (g.AW + cd.len * 0.6)
+		g.P.z = v.y * (g.AH + cd.len * 0.6)
+		g.clamp_pos(g.P)
+		g.cam_t = Vector2(g.P.x, g.P.z)
 	if OS.get_cmdline_user_args().has("surgeon"):  # standing at the altar, no enemies
 		g.enemies.clear()
 		g.items.clear()
@@ -501,6 +515,8 @@ func smoke() -> void:
 	var first_dir := _path_dir()
 	var steps := 0
 	var back_ok := false
+	var walk_fail := 0
+	var prev_room := -1
 	while not g.won and steps < 300:
 		steps += 1
 		g.enemies = g.prune(g.enemies, func(_e): return false)
@@ -515,19 +531,19 @@ func smoke() -> void:
 		g.P.x = d.x
 		g.P.z = d.z
 		g.clamp_pos(g.P)
-		g.player.interact("R")
-		_run(2)
-		if steps == 1:  # walk back through the opened door, then forward again
+		g.player.interact("R")  # opens the door; then walk down the corridor
+		prev_room = g.room.idx
+		if not _walk(dir):
+			walk_fail += 1
+		if steps == 1 and g.room.idx != prev_room:  # walk back through the corridor, then forward again
 			g.enemies = g.prune(g.enemies, func(_e): return false)
 			_run(2)
 			var bd = g.doors.filter(func(x): return x.dir == Game.OPP[first_dir])[0]
 			g.P.x = bd.x
 			g.P.z = bd.z
 			g.clamp_pos(g.P)
-			g.t_move = Vector2(Game.DIRS[Game.OPP[first_dir]])
-			_run(3)
-			g.t_move = Vector2.ZERO
-			back_ok = g.room.idx == 0
+			back_ok = _walk(Game.OPP[first_dir]) and g.room.idx == 0
+	print("seamless run: won %s in %d steps, corridor walks that failed %d" % [g.won, steps, walk_fail])
 	print("walk back through opened door: %s" % back_ok)
 	# out of ammo: bare-handed kills drop a weapon often, armed kills never do
 	g.new_game()
@@ -667,6 +683,17 @@ func _loot_never_quirky() -> bool:
 	var ok := not g.items.any(func(i): return i.kind == "part" and i.type in D.QUIRKY_TYPES)
 	g.items = []
 	return ok
+
+# Walks in direction dir until the room changes (through an open door and its corridor). True if it did.
+func _walk(dir: String) -> bool:
+	var from: int = g.room.idx
+	g.t_move = Vector2(Game.DIRS[dir])
+	for i in 400:
+		_run(1)
+		if g.room.idx != from:
+			break
+	g.t_move = Vector2.ZERO
+	return g.room.idx != from
 
 func test_room(type: String, depth := 0) -> void:
 	var r := g.world.make_room(type)
