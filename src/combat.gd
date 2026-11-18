@@ -81,6 +81,9 @@ func melee(a: float, rng: float, arc: float, dmg: float, kb: float, o := {}) -> 
 				g.loot.smash_chest(c)
 			else:
 				g.loot.damage_chest(c, o.get("saw", false))
+	for p in g.props:
+		if not p.broken and g.d2(p, g.P) < rng + 0.6 and g.ang_diff(atan2(p.z - g.P.z, p.x - g.P.x), a) < arc:
+			g.world.break_prop(p)
 	if smash:
 		for d in g.doors:
 			if g.d2(d, g.P) < rng + 1.2:
@@ -137,6 +140,9 @@ func explode(x: float, z: float, r: float, dmg: float) -> void:
 	for ch in g.chests:
 		if not ch.open and g.d2(ch, c) < r + 0.8:
 			g.loot.damage_chest(ch)
+	for p in g.props:
+		if g.d2(p, c) < r + 0.5:
+			g.world.break_prop(p)
 
 # Thrown boomerang arms and burning ground from a rocket leg.
 func update_flyers(dt: float) -> void:
@@ -223,6 +229,10 @@ func update_bullets(dt: float) -> void:
 					if not b.dead and not c.open and g.d2(b, c) < 1:
 						g.loot.damage_chest(c)
 						b.dead = true
+				for p in g.props:
+					if not b.dead and not p.broken and g.d2(b, p) < 0.7:
+						g.world.break_prop(p)
+						b.dead = true
 		elif g.P.dash == null and g.d2(b, g.P) < 0.75:
 			var front: bool = g.ang_diff(atan2(-b.vz, -b.vx), g.P.aim) < 1.1
 			if front and (g.P.shL > 0 or g.P.shR > 0):
@@ -232,7 +242,7 @@ func update_bullets(dt: float) -> void:
 			else:
 				b.dead = true
 				g.body.hurt(1, 0.35)
-		if absf(b.x) > g.AW or absf(b.z) > g.AH or b.life <= 0 or (g.in_block(b.x, b.z, 0.1) and not b.get("fly", false)):
+		if not g.in_space(b.x, b.z) or b.life <= 0 or (g.in_block(b.x, b.z, 0.1) and not b.get("fly", false)):
 			b.dead = true
 		if b.dead and b.explode > 0:
 			explode(b.x, b.z, b.explode, b.dmg)

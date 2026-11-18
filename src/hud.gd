@@ -277,6 +277,26 @@ func _draw_hud() -> void:
 			text("You fell apart on floor %d" % g.floor_n, Vector2(W / 2, H / 2 - 10), Color.WHITE, 36, true)
 			text("%d kills - press R to try again" % g.kills, Vector2(W / 2, H / 2 + 28), Color.WHITE, 18, true)
 
+# What a room you are not in still holds, as small marks in its map cell: items (yellow dot),
+# closed chests (brown square), an unused surgeon (pink dot). The current room is on screen instead.
+func _draw_loot_marks(r: Dictionary, rect: Rect2, k: float) -> void:
+	var marks := []
+	if not r.items.is_empty():
+		marks.append([Color("ffee66"), true])
+	if r.chests.any(func(c): return not c.open):
+		marks.append([Color("c08a3a"), false])
+	if r.altar != null and not r.altar.used:
+		marks.append([Color("ee99ff"), true])
+	var sz := clampf(3.0 * k, 3.0, 6.0)
+	var x := rect.position.x + rect.size.x / 2 - (marks.size() - 1) * sz * 1.4
+	for m in marks:
+		var p := Vector2(x, rect.position.y + rect.size.y / 2)
+		if m[1]:
+			draw_circle(p, sz, m[0])
+		else:
+			draw_rect(Rect2(p - Vector2(sz, sz), Vector2(sz, sz) * 2), m[0])
+		x += sz * 2.8
+
 # Controls list in the bottom left corner: key column, then what it does.
 func _draw_controls(H: float) -> void:
 	var row := 17.0
@@ -326,6 +346,15 @@ func _draw_info(W: float, H: float) -> void:
 		draw_rect(Rect2(lx, ly - 11, 16, 12), Color(D.DOOR_COLOR[k]))
 		text(k, Vector2(lx + 22, ly), Color("aaaaaa"), 13)
 		lx += 40 + font.get_string_size(k, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	lx = 32.0
+	ly += 22
+	for l in [["loot left", Color("ffee66"), true], ["closed chest", Color("c08a3a"), false], ["surgeon unused", Color("ee99ff"), true]]:
+		if l[2]:
+			draw_circle(Vector2(lx + 8, ly - 5), 5, l[1])
+		else:
+			draw_rect(Rect2(lx + 3, ly - 10, 10, 10), l[1])
+		text(l[0], Vector2(lx + 22, ly), Color("aaaaaa"), 13)
+		lx += 40 + font.get_string_size(l[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 	# body
 	var x0 := split + 24
 	var tw := W - x0 - 250
@@ -388,3 +417,5 @@ func _draw_map(c: Vector2, cw: float, chh: float, half: Vector2) -> void:
 		draw_rect(rect, col)
 		if r.idx == cur.idx:
 			draw_rect(rect.grow(2), Color.WHITE, false, 2.0)
+		elif r.visited:
+			_draw_loot_marks(r, rect, k)

@@ -70,6 +70,8 @@ var vis_radius := -1.0
 var vis_side := 0.0
 var aim_pt := Vector2.ZERO
 var rooms: Array = []
+var corridors: Array = []  # one per link: {a, b, ew, w, s0, s1, props}, world coordinates (world.place_rooms)
+var props: Array = []  # unbroken breakables in the current room's corridors, with local x / z
 var solid := PackedByteArray()  # grid of cells blocked by walls, for pathfinding
 var ff := PackedInt32Array()  # steps to the player from each cell
 var ff_w := 0
@@ -313,31 +315,44 @@ func clamp_pos(o) -> void:
 					o.x += px * (1.0 if o.x >= b.x else -1.0)
 				else:
 					o.z += pz * (1.0 if o.z >= b.z else -1.0)
-	if is_same(o, P) and in_corridor():
+	if (is_same(o, P) or o.has("kind")) and in_corridor(o):  # the player or loot
 		return
 	o.x = clampf(o.x, -AW + 1, AW - 1)
 	o.z = clampf(o.z, -AH + 1, AH - 1)
 
-# The player may leave the room through an open doorway once no enemies are left: keeps them
-# inside the doorway and its corridor and returns true, or returns false when they are not in one.
-func in_corridor() -> bool:
-	if not enemies.is_empty():
+# The player (once no enemies are left) and loot may be in an open doorway and its corridor.
+# Keeps o inside the doorway and corridor it is in and returns true, or returns false when it is in none.
+func in_corridor(o) -> bool:
+	if is_same(o, P) and not enemies.is_empty():
 		return false
-	var lane: float = D.DOOR_W / 2 - 0.6
+	var lane: float = D.DOOR_W / 2 - (0.6 if is_same(o, P) else 0.4)
 	for d in doors:
 		if not room.opened.get(d.dir, false):
 			continue
 		var v: Vector2i = DIRS[d.dir]
-		var across: float = P.z if v.x != 0 else P.x
-		if world.past_wall(d) > -1.0 and absf(across) < lane + 0.3:
-			across = clampf(across, -lane, lane)
+		var across: float = (o.z if v.x != 0 else o.x) - d.at
+		if world.past_wall(d, o) > -1.0 and absf(across) < lane + 0.3:
+			across = d.at + clampf(across, -lane, lane)
 			if v.x != 0:
-				P.z = across
-				P.x = clampf(P.x, -AW - d.len - 1, AW + d.len + 1)
+				o.z = across
+				o.x = clampf(o.x, -AW - d.len - 1, AW + d.len + 1)
 			else:
-				P.x = across
-				P.z = clampf(P.z, -AH - d.len - 1, AH + d.len + 1)
+				o.x = across
+				o.z = clampf(o.z, -AH - d.len - 1, AH + d.len + 1)
 			return true
+	return false
+
+# Whether a point is open floor: inside the room or inside an opened doorway's corridor (for bullets).
+func in_space(x: float, z: float) -> bool:
+	if absf(x) <= AW and absf(z) <= AH:
+		return true
+	for d in doors:
+		if room.opened.get(d.dir, false):
+			var v: Vector2i = DIRS[d.dir]
+			var across: float = (z if v.x != 0 else x) - d.at
+			var past: float = world.past_wall(d, {x = x, z = z})
+			if absf(across) < D.DOOR_W / 2 and past > -0.5 and past < d.len:
+				return true
 	return false
 
 func in_block(x: float, z: float, margin: float) -> bool:

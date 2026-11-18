@@ -165,14 +165,17 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
         area^0.6 (`ROOM_FILL`), crates and spikes with area. Grid columns / rows are packed to their
         biggest room so corridors stay short (`CORRIDOR_MIN`). Spitters only spit within 15
         (`SPIT_RANGE`), never from off screen
-  - [ ] Corridors from the small start / surgeon rooms can be long (their row or column also holds
-        big rooms); nudge small rooms toward the neighbour they share a corridor with
+  - [x] Corridors are breaks: random length (6 to about 30; `CORRIDOR_MIN`, `CORRIDOR_MAX`,
+        `CORRIDOR_LONG`), the doorway anywhere along the wall, filled with pots, barrels and small
+        crates that break on any hit or when walked into, and sometimes drop a heart, finger or
+        scrap (`PROPS`, `PROP_EVERY`, `PROP_DROP`). Start and surgeon rooms a bit bigger (32 x 20,
+        32 x 22) so corridors next to them stay short
   - [ ] The body panel (top right) now covers enemies more often in big rooms; consider shrinking
         it or fading it while enemies are under it
-  - [ ] Step 3: show the loot, chests and altar of visited rooms you can see from outside (today
-        only the current room's things are drawn, so a room you just left looks empty)
-  - [ ] Step 4: decide what corridors are for: enemies that follow you out, traps, short / bent
-        corridors instead of one fixed grid spacing
+  - [x] Step 3: loot of the rooms next to yours is loaded (items, chests, spikes, altar, stairs) so you
+        see it as you walk up; rooms further away are unloaded and the map marks what they still
+        hold (items, closed chests, unused surgeon), on the minimap and the Tab map
+  - [ ] Step 4: more for corridors: bent corridors, the odd trap or ambush, enemies that follow you out
   - [ ] Dark rooms dim the whole floor while you are in one (lighting is still global)
 - [ ] Real bosses, one per floor, replacing the elite brute guardian
 - [ ] Shop room and a currency
@@ -212,5 +215,5 @@ _Add what feels off here after each session._
 
 - Play: open the project in Godot, press F5.
 - Mechanics test: `Godot --headless --path . -- --smoke [--seed N]` (same seed, same output)
-- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump|chests|picker|surgeon|corridor] [pillars|corners|vbars|hbars|crates]`
+- Screenshot: `Godot --path . -- --shot <file.png> [menu|pause|info|quirky|debug|stump|chests|picker|surgeon|corridor [near]] [pillars|corners|vbars|hbars|crates]`
 - Content tables (parts, guns, enemies, rooms) are in `src/data.gd`. How the code is organised: `ARCHITECTURE.md`.

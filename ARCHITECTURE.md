@@ -24,8 +24,8 @@ What the game is and what is planned lives in [PLAN.md](PLAN.md); this file cove
 | `src/combat.gd` | ~280 | Damage to enemies: `hit`, `melee`, `shoot`, `explode`, status effects, cutting enemy limbs, bullets and thrown arms every frame |
 | `src/enemies.gd` | ~210 | Enemies: `spawn`, pathfinding, their behaviour every frame |
 | `src/loot.gd` | ~200 | Loot rolls, enemy drops, opening / smashing / breaking chests, mimics, the surgeon, the stray-hand rescue |
-| `src/world.gd` | ~500 | Floors and rooms: generation, layouts, floor geometry (rooms, corridors, fog), entering rooms, walking between them, populating, clearing, doors, stairs, floor hazards |
-| `src/view.gd` | ~370 | Meshes for the player and everything in the room, doors, the camera, the vision overlay |
+| `src/world.gd` | ~680 | Floors and rooms: generation, layouts, room placement, floor geometry (rooms, corridors, breakables, fog), entering rooms, walking between them, populating, clearing, doors, stairs, floor hazards |
+| `src/view.gd` | ~430 | Meshes for the player and everything in the room, neighbouring rooms' loot, doors, breakables, the camera, the vision overlay |
 | `src/shapes.gd` | ~50 | Static mesh helpers: `box`, `ball`, `cyl`, `cone`, `grp`, `mat` |
 | `src/debug_room.gd` | ~120 | The debug room and its keys |
 | `src/data.gd` | ~200 | Content and tuning tables only (parts, guns, enemies, rooms, drop rates). No logic |
@@ -177,16 +177,31 @@ new_game() → world.next_floor() → world.gen_floor() → world.build_floor() 
 
 - Seamless floors: every room has a fixed place in one world, `room_off(r)` (`r.ox`, `r.oz`), set by
   `place_rooms()`: each grid column is as wide as its widest room and each row as deep as its deepest,
-  `CORRIDOR_MIN` apart (in `data.gd`). `build_floor()` builds all rooms (`build_room_geo()`: floor, walls
-  with a `DOOR_W` gap per link, a door mesh per link in `r.door_m`, obstacles, a fog block in `r.fog_m`)
-  and one corridor per link (`build_corridor()`) under `g.floor_g`.
+  a random `CORRIDOR_MIN`-`CORRIDOR_MAX` apart; a smaller room leans toward its links inside that space
+  (`_lean()`), and placement is retried (keeping the best try) until no corridor is longer than
+  `CORRIDOR_LONG`. Each link then gets a doorway anywhere both walls overlap: `r.door_at[dir]` is its
+  offset along the wall in the room's own coordinates, and `g.corridors` holds one record per link
+  (`{a, b, ew, w, s0, s1, props}`, world coordinates; `r.corr[dir]` points at it).
+  `clear_door_lanes()` removes obstacles between a doorway and the room's clear centre cross.
+  `build_floor()` builds all rooms (`build_room_geo()`: floor, walls with a `DOOR_W` gap at each
+  doorway, a door mesh per link in `r.door_m`, obstacles, a fog block in `r.fog_m`) and the corridors
+  (`fill_corridor()`, `build_corridor()`) under `g.floor_g`.
 - Game logic still runs in the current room's own coordinates (centre 0, 0; walls at `AW` / `AH`).
   `g.floor_g` is moved by minus the room's offset so the two line up. When the player walks into the
   next room, `enter_room(..., walked = true)` shifts the player and `g.cam_t` by the difference between
   the two rooms' offsets, so the screen does not jump.
-- Doors: `try_door()` only opens a door (both sides). An open door is a gap; `g.in_corridor()` (called
-  from `clamp_pos()` for the player only) lets the player into the doorway and its corridor while no
-  enemies are left. Once past the far room's wall line (`past_wall(d) > d.len`), that room becomes current.
+- Doors: `try_door()` only opens a door (both sides). An open door is a gap; `g.in_corridor(o)` (called
+  from `clamp_pos()` for the player and for loot) keeps them in the doorway and its corridor; the player
+  only while no enemies are left. Once past the far room's wall line (`past_wall(d) > d.len`), that room
+  becomes current. `g.in_space()` is the open floor bullets may fly through (room plus open corridors).
+- Corridors are breaks between fights, filled with breakables (`PROPS`, about one per `PROP_EVERY`).
+  Their meshes live in `floor_g`; `load_corridors()` puts the current room's unbroken ones in `g.props`
+  with local `x` / `z`. Melee, bullets, explosions and walking into one call `world.break_prop()`, which
+  sometimes drops something (`PROP_DROP`). Loot lying in a corridor belongs to whichever room the player
+  is in: `load_corridors()` takes it over from the neighbour when the player walks in.
+- Loot of rooms next to the current one is shown as still meshes (`view.show_near()`, rebuilt on every
+  room change); rooms further away are unloaded and the map marks what they still hold
+  (`hud._draw_loot_marks()`: items, closed chests, an unused surgeon).
 - Unvisited rooms are under a block of the background colour, their obstacles hidden; `reveal()` lifts it
   on the first visit.
 

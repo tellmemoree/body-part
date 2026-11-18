@@ -319,6 +319,9 @@ func update_movement(dt: float) -> void:
 	g.clamp_pos(g.P)
 	if g.enemies.is_empty() and not g.debug:
 		g.loot.rescue_hand()  # no hands outside a fight (grenade, rot, trap): never leave the player stuck
+	for p in g.props:  # walking or dashing into a pot breaks it
+		if not p.broken and g.d2(p, g.P) < 0.95:
+			g.world.break_prop(p)
 	g.world.check_transit()  # walked out of a corridor into the next room
 
 # Held clicks (with piston charge), reload timers, jaw, laser eye.

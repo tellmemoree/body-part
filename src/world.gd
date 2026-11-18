@@ -27,12 +27,12 @@ func gen_layout(r: Dictionary) -> void:
 	var wall := "505068"
 	var style: String = ["open", "pillars", "corners", "corners", "vbars", "hbars", "crates", "crates"].pick_random()
 	if r.type == "start":
-		r.hw = 12.0
-		r.hh = 8.0
+		r.hw = 16.0
+		r.hh = 10.0
 		style = "open"
 	elif r.type == "surgeon":
-		r.hw = 13.0
-		r.hh = 9.0
+		r.hw = 16.0
+		r.hh = 11.0
 		style = ["open", "pillars"].pick_random()
 	elif r.type == "exit":
 		r.hw = float(D.ROOM_HW[1]) - 2
@@ -94,8 +94,10 @@ func area_k(r: Dictionary) -> float:
 func room_off(r: Dictionary) -> Vector2:
 	return Vector2(r.get("ox", 0.0), r.get("oz", 0.0))
 
-# Lays the floor's grid out in the world: each column as wide as its widest room, each row as deep as
-# its deepest, CORRIDOR_MIN apart. Corridors are then as short as the room sizes allow.
+# Lays the floor's grid out in the world. Each column is as wide as its widest room and each row as deep
+# as its deepest, a random CORRIDOR_MIN-CORRIDOR_MAX apart; a smaller room leans toward its links inside
+# its column / row (_lean). Retried until no corridor is longer than CORRIDOR_LONG. Then every link gets a doorway somewhere both rooms' walls overlap (door_at: the door's
+# offset along the wall, in each room's own coordinates) and a corridor record in g.corridors.
 func place_rooms() -> void:
 	var col := {}
 	var row := {}
@@ -104,11 +106,80 @@ func place_rooms() -> void:
 		row[r.gy] = maxf(row.get(r.gy, 0.0), r.hh)
 	var cx := _centres(col)
 	var cz := _centres(row)
+	var room_m := D.DOOR_W / 2 + 1.5  # keep doorways this far from a room's corners
+	var best := {}
+	var best_len := INF
+	for tries in 200:
+		var jig := tries > 0  # first try: every room centred in its cell, which always has a doorway
+		for r in g.rooms:
+			r.ox = cx[r.gx] + (_lean(r, "W", "E") * (col[r.gx] - r.hw) if jig else 0.0)
+			r.oz = cz[r.gy] + (_lean(r, "N", "S") * (row[r.gy] - r.hh) if jig else 0.0)
+		var longest := _longest(room_m)
+		if longest < best_len:
+			best_len = longest
+			for r in g.rooms:
+				best[r.idx] = Vector2(r.ox, r.oz)
+		if longest <= D.CORRIDOR_LONG:
+			break
+	for r in g.rooms:  # the try with the shortest longest corridor (some floors cannot keep all under the cap)
+		r.ox = best[r.idx].x
+		r.oz = best[r.idx].y
+	g.corridors = []
 	for r in g.rooms:
-		r.ox = cx[r.gx]
-		r.oz = cz[r.gy]
+		r.door_at = {}
+		r.corr = {}
+	for r in g.rooms:
+		for dir in ["E", "S"]:
+			if not r.links.has(dir):
+				continue
+			var o: Dictionary = g.rooms[r.links[dir]]
+			var ov := _overlap(r, o, dir, room_m)
+			var w := randf_range(ov.x, ov.x + ov.y)  # world coordinate across the corridor
+			var ew: bool = dir == "E"
+			r.door_at[dir] = w - (r.oz if ew else r.ox)
+			o.door_at[Game.OPP[dir]] = w - (o.oz if ew else o.ox)
+			var s0: float = (r.ox + r.hw) if ew else (r.oz + r.hh)
+			var s1: float = (o.ox - o.hw) if ew else (o.oz - o.hh)
+			var c := {a = r.idx, b = o.idx, ew = ew, w = w, s0 = s0, s1 = s1, props = []}
+			g.corridors.append(c)
+			r.corr[dir] = c
+			o.corr[Game.OPP[dir]] = c
 
-# Centre of each grid line, given the half size of each: neighbours sit half + CORRIDOR_MIN + half apart.
+# Where a room sits in the spare room of its column (or row), from -1 (lo side) to 1 (hi side):
+# toward its only link on that axis, so the corridor is short; anywhere when it links both ways or neither.
+func _lean(r: Dictionary, lo: String, hi: String) -> float:
+	var l: bool = r.links.has(lo)
+	var h: bool = r.links.has(hi)
+	if l == h:
+		return randf_range(-1, 1)
+	return randf_range(0.4, 1.0) * (1.0 if h else -1.0)
+
+# The longest corridor of the current placement, or INF if some link has no room for a doorway.
+func _longest(m: float) -> float:
+	var out := 0.0
+	for a in g.rooms:
+		for dir in ["E", "S"]:
+			if not a.links.has(dir):
+				continue
+			var b: Dictionary = g.rooms[a.links[dir]]
+			if _overlap(a, b, dir, m).y <= 0:
+				return INF
+			out = maxf(out, (b.ox - a.ox - a.hw - b.hw) if dir == "E" else (b.oz - a.oz - a.hh - b.hh))
+	return out
+
+# Where a doorway between a and its neighbour b (in direction dir) may go, as (start, length) of the
+# world coordinate across the corridor; length <= 0 when the two walls do not overlap enough.
+func _overlap(a: Dictionary, b: Dictionary, dir: String, m: float) -> Vector2:
+	var ew: bool = Game.DIRS[dir].x != 0
+	var ac: float = a.oz if ew else a.ox
+	var bc: float = b.oz if ew else b.ox
+	var ah: float = a.hh if ew else a.hw
+	var bh: float = b.hh if ew else b.hw
+	var lo := maxf(ac - ah + m, bc - bh + m)
+	var hi := minf(ac + ah - m, bc + bh - m)
+	return Vector2(lo, hi - lo)
+
+# Centre of each grid line, given the half size of each: neighbours sit half + gap + half apart.
 func _centres(half: Dictionary) -> Dictionary:
 	var ks := half.keys()
 	ks.sort()
@@ -116,9 +187,38 @@ func _centres(half: Dictionary) -> Dictionary:
 	var at := 0.0
 	for i in ks.size():
 		if i > 0:
-			at += half[ks[i - 1]] + D.CORRIDOR_MIN + half[ks[i]]
+			at += half[ks[i - 1]] + randf_range(D.CORRIDOR_MIN, D.CORRIDOR_MAX) + half[ks[i]]
 		out[ks[i]] = at
 	return out
+
+# Obstacles that stand in front of a doorway are removed, so every door reaches the room's clear cross.
+func clear_door_lanes(r: Dictionary) -> void:
+	var keep := []
+	for b in r.blocks:
+		var hit := false
+		for dir in r.links:
+			var v: Vector2i = Game.DIRS[dir]
+			var at: float = r.door_at[dir]
+			var lane := D.DOOR_W / 2 + 1.2
+			if v.x != 0:  # strip from the E / W wall to the room's centre line, at z = at
+				hit = hit or (absf(b.z - at) < b.h / 2 + lane and b.x * v.x + b.w / 2 > 0)
+			else:
+				hit = hit or (absf(b.x - at) < b.w / 2 + lane and b.z * v.y + b.h / 2 > 0)
+		if not hit:
+			keep.append(b)
+	r.blocks = keep
+
+# Fills a corridor with breakables (world coordinates), leaving its two ends clear.
+func fill_corridor(c: Dictionary) -> void:
+	var ln: float = c.s1 - c.s0
+	var n := roundi(ln / D.PROP_EVERY * randf_range(0.5, 1.0))
+	for i in n:
+		var along := randf_range(c.s0 + 2.0, c.s1 - 2.0)
+		var across: float = c.w + randf_range(-1, 1) * (D.DOOR_W / 2 - 0.7)
+		var p := {type = D.PROPS.keys().pick_random(), broken = false, m = null}
+		p.wx = along if c.ew else across
+		p.wz = across if c.ew else along
+		c.props.append(p)
 
 func floor_color(r: Dictionary) -> Color:
 	if r.type == "dark":
@@ -132,12 +232,13 @@ func build_floor() -> void:
 		c.queue_free()
 	place_rooms()
 	for r in g.rooms:
+		clear_door_lanes(r)
 		r.erase("geo")
 		build_room_geo(r)
-	for r in g.rooms:
-		for dir in ["E", "S"]:
-			if r.links.has(dir):
-				build_corridor(r, g.rooms[r.links[dir]], dir)
+	for c in g.corridors:
+		fill_corridor(c)
+		build_corridor(c)
+	g.view.near_g = null  # it was freed with the rest of the floor
 
 func build_room_geo(r: Dictionary) -> void:
 	r.geo = true
@@ -155,7 +256,8 @@ func build_room_geo(r: Dictionary) -> void:
 		var wz: float = o.y + v.y * (hh + 0.25)
 		var spans := [[-half - 0.5, half + 0.5]]
 		if r.links.has(dir):
-			spans = [[-half - 0.5, -gap], [gap, half + 0.5]]
+			var at: float = r.door_at[dir]
+			spans = [[-half - 0.5, at - gap], [at + gap, half + 0.5]]
 		for sp in spans:
 			var ln: float = sp[1] - sp[0]
 			var mid: float = (sp[0] + sp[1]) / 2
@@ -167,8 +269,9 @@ func build_room_geo(r: Dictionary) -> void:
 	for dir in r.links:
 		var v: Vector2i = Game.DIRS[dir]
 		var horiz := v.y != 0
+		var at: float = r.door_at[dir]
 		var dm := Shapes.box(D.DOOR_W if horiz else 0.5, 2.6, 0.5 if horiz else D.DOOR_W, "333333",
-			o.x + v.x * (hw + 0.25), 1.3, o.y + v.y * (hh + 0.25))
+			o.x + (v.x * (hw + 0.25) if v.x != 0 else at), 1.3, o.y + (v.y * (hh + 0.25) if v.y != 0 else at))
 		g.floor_g.add_child(dm)
 		r.door_m[dir] = dm
 	for b in r.blocks:
@@ -181,32 +284,29 @@ func build_room_geo(r: Dictionary) -> void:
 	g.floor_g.add_child(fog)
 	r.fog_m = fog
 
-# A straight corridor from room a's doorway to room b's (b lies in direction dir from a).
-func build_corridor(a: Dictionary, b: Dictionary, dir: String) -> void:
-	var oa := room_off(a)
-	var v: Vector2i = Game.DIRS[dir]
-	var horiz := v.x != 0  # an E / W corridor runs along x
-	var s0: float = (oa.x + a.hw + 0.5) if horiz else (oa.y + a.hh + 0.5)
-	var ln := corridor_len(a, dir) - 1.0
-	var mid := s0 + ln / 2
+# A straight corridor (floor, two side walls, its breakables) between two doorways.
+func build_corridor(c: Dictionary) -> void:
+	var ln: float = c.s1 - c.s0
+	var mid: float = (c.s0 + c.s1) / 2
 	var wall := "44445a"
 	var gap := D.DOOR_W / 2 + 0.25
-	if horiz:
-		g.floor_g.add_child(Shapes.box(ln + 0.2, 0.2, D.DOOR_W, "24242e", mid, -0.1, oa.y))
+	if c.ew:
+		g.floor_g.add_child(Shapes.box(ln, 0.2, D.DOOR_W, "24242e", mid, -0.1, c.w))
 		for sd in [-1, 1]:
-			g.floor_g.add_child(Shapes.box(ln, 2, 0.5, wall, mid, 1, oa.y + sd * gap))
+			g.floor_g.add_child(Shapes.box(ln - 1.0, 2, 0.5, wall, mid, 1, c.w + sd * gap))
 	else:
-		g.floor_g.add_child(Shapes.box(D.DOOR_W, 0.2, ln + 0.2, "24242e", oa.x, -0.1, mid))
+		g.floor_g.add_child(Shapes.box(D.DOOR_W, 0.2, ln, "24242e", c.w, -0.1, mid))
 		for sd in [-1, 1]:
-			g.floor_g.add_child(Shapes.box(0.5, 2, ln, wall, oa.x + sd * gap, 1, mid))
+			g.floor_g.add_child(Shapes.box(0.5, 2, ln - 1.0, wall, c.w + sd * gap, 1, mid))
+	for p in c.props:
+		p.m = g.view.mk_prop(p)
+		p.m.position = Vector3(p.wx, 0, p.wz)
+		g.floor_g.add_child(p.m)
 
 # Distance from room r's inner wall line to the next room's inner wall line through the door in dir.
 func corridor_len(r: Dictionary, dir: String) -> float:
-	var o: Dictionary = g.rooms[r.links[dir]]
-	var v: Vector2i = Game.DIRS[dir]
-	if v.x != 0:
-		return absf(room_off(o).x - room_off(r).x) - r.hw - o.hw
-	return absf(room_off(o).y - room_off(r).y) - r.hh - o.hh
+	var c: Dictionary = r.corr[dir]
+	return c.s1 - c.s0
 
 # Shows a room's obstacles and lifts its fog once it has been visited.
 func reveal(r: Dictionary) -> void:
@@ -304,7 +404,7 @@ func stash_room() -> void:
 	g.room.stairs = g.stairs
 
 func near_door(x: float, z: float) -> bool:
-	return (absf(x) < 4 and absf(z) > g.AH - 5) or (absf(z) < 4 and absf(x) > g.AW - 5)
+	return g.doors.any(func(d): return Vector2(x - d.x, z - d.z).length() < 5)
 
 func free_spot(mx: float, mz: float) -> Vector2:
 	var v := Vector2.ZERO
@@ -359,17 +459,20 @@ func enter_room(r: Dictionary, from_dir: String, walked := false) -> void:
 		g.P.vz = 0.0
 		g.P.x = 0.0
 		g.P.z = 3.0
+		var at: float = r.get("door_at", {}).get(Game.OPP.get(from_dir, ""), 0.0)  # the doorway we came in by
 		match from_dir:  # the direction we walked: arrive at the opposite wall
 			"N":
+				g.P.x = at
 				g.P.z = g.AH - 2.5
 			"S":
+				g.P.x = at
 				g.P.z = -g.AH + 2.5
 			"E":
 				g.P.x = -g.AW + 2.5
-				g.P.z = 0.0
+				g.P.z = at
 			"W":
 				g.P.x = g.AW - 2.5
-				g.P.z = 0.0
+				g.P.z = at
 		g.P.y = 0.0
 		g.P.dash = null
 		g.P.kx = 0.0
@@ -382,14 +485,68 @@ func enter_room(r: Dictionary, from_dir: String, walked := false) -> void:
 	g.doors = []
 	for dir in r.links:
 		var v: Vector2i = Game.DIRS[dir]
-		g.doors.append({x = v.x * g.AW, z = v.y * g.AH, dir = dir, to = g.rooms[r.links[dir]], len = corridor_len(r, dir)})
+		var at: float = r.door_at[dir]
+		g.doors.append({x = v.x * g.AW if v.x != 0 else at, z = v.y * g.AH if v.y != 0 else at, at = at,
+			dir = dir, to = g.rooms[r.links[dir]], len = corridor_len(r, dir)})
+	load_corridors(r)
 	if not r.visited:
 		r.visited = true
 		populate(r)
 	reveal(r)
+	g.view.show_near()
 	if g.enemies.is_empty() and not r.cleared:
 		clear_room()
 	g.loot.rescue_hand()
+
+# The current room's corridors: their unbroken breakables go into g.props (in this room's coordinates),
+# and loot lying in them that a neighbour room held is handed to this room, so it can be picked up here.
+func load_corridors(r: Dictionary) -> void:
+	var o := room_off(r)
+	g.props = []
+	for dir in r.get("corr", {}):
+		var c: Dictionary = r.corr[dir]
+		for p in c.props:
+			if not p.broken:
+				p.x = p.wx - o.x
+				p.z = p.wz - o.y
+				g.props.append(p)
+		var nb: Dictionary = g.rooms[r.links[dir]]
+		var no := room_off(nb)
+		var keep := []
+		for i in nb.items:
+			var wx: float = i.x + no.x
+			var wz: float = i.z + no.y
+			if in_corridor_rect(c, wx, wz):
+				i.x = wx - o.x
+				i.z = wz - o.y
+				i.m = null
+				g.items.append(i)
+			else:
+				keep.append(i)
+		nb.items = keep
+
+# Smashes a corridor breakable: a puff of splinters and, sometimes, a small drop (PROP_DROP).
+func break_prop(p: Dictionary) -> void:
+	if p.broken:
+		return
+	p.broken = true
+	if p.m != null:
+		p.m.queue_free()
+		p.m = null
+	g.fx.append({k = "ring", x = p.x, z = p.z, r = 0.9, t = 0.2, life = 0.2, c = Color(D.PROPS[p.type])})
+	var roll := randf()
+	for dr in D.PROP_DROP:
+		if roll < dr[1]:
+			g.add_item({kind = dr[0]}, p.x, p.z)
+			break
+		roll -= dr[1]
+	g.props = g.props.filter(func(o): return not o.broken)
+
+# Whether a world position lies in corridor c (between its two wall lines, within its width).
+func in_corridor_rect(c: Dictionary, wx: float, wz: float) -> bool:
+	var along := wx if c.ew else wz
+	var across := wz if c.ew else wx
+	return along > c.s0 + 0.3 and along < c.s1 - 0.3 and absf(across - c.w) < D.DOOR_W / 2
 
 # Walking through a corridor: once the player passes the far room's wall line, that room becomes current.
 func check_transit() -> void:
@@ -400,10 +557,12 @@ func check_transit() -> void:
 			enter_room(d.to, d.dir, true)
 			return
 
-# How far the player is beyond the wall that holds door d (negative while still inside the room).
-func past_wall(d: Dictionary) -> float:
+# How far o (the player by default) is beyond the wall that holds door d (negative while inside the room).
+func past_wall(d: Dictionary, o = null) -> float:
+	if o == null:
+		o = g.P
 	var v: Vector2i = Game.DIRS[d.dir]
-	return (g.P.x * v.x - g.AW) if v.x != 0 else (g.P.z * v.y - g.AH)
+	return (o.x * v.x - g.AW) if v.x != 0 else (o.z * v.y - g.AH)
 
 func populate(r: Dictionary) -> void:
 	var type: String = r.type
@@ -461,14 +620,18 @@ func populate(r: Dictionary) -> void:
 					g.spikes.append({x = v.x, z = v.y, w = w, h = h, m = null})
 					break
 
-# Whether a w x h rectangle centred at (x, z) touches the strip of floor in front of a door,
-# where the player lands when walking in (DOOR_LANE wide, DOOR_LANE_DEPTH deep, on all four walls).
+# Whether a w x h rectangle centred at (x, z) touches the strip of floor in front of one of the
+# current room's doors, where the player walks in (DOOR_LANE wide, DOOR_LANE_DEPTH deep).
 func in_door_lane(x: float, z: float, w: float, h: float) -> bool:
 	var lw: float = D.DOOR_LANE / 2
 	var ld: float = D.DOOR_LANE_DEPTH
-	if absf(x) - w / 2 < lw and absf(z) + h / 2 > g.AH - ld:
-		return true
-	return absf(z) - h / 2 < lw and absf(x) + w / 2 > g.AW - ld
+	for d in g.doors:
+		var v: Vector2i = Game.DIRS[d.dir]
+		if v.x != 0 and absf(z - d.at) - h / 2 < lw and x * v.x + w / 2 > g.AW - ld:
+			return true
+		if v.y != 0 and absf(x - d.at) - w / 2 < lw and z * v.y + h / 2 > g.AH - ld:
+			return true
+	return false
 
 func clear_room() -> void:
 	g.room.cleared = true

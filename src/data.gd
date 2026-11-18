@@ -200,6 +200,13 @@ const FIGHT_CHEST := 0.35  # chance that a fight room has a chest
 # Seamless floors: rooms sit on a grid; each grid column is as wide as its widest room (and each
 # row as deep as its deepest), with at least CORRIDOR_MIN of corridor between neighbouring columns / rows.
 const CORRIDOR_MIN := 6.0
+const CORRIDOR_MAX := 14.0  # the gap between neighbouring grid columns / rows is random in between
+const CORRIDOR_LONG := 26.0  # no corridor longer than this (room placement is retried until none is)
+# Breakables in corridors (pots, barrels, small crates): any hit, or walking into one, breaks it.
+# PROP_EVERY: about one per this many units of corridor. PROP_DROP: chance of each drop (else nothing).
+const PROP_EVERY := 2.6
+const PROP_DROP := [["heart", 0.05], ["finger", 0.05], ["scrap", 0.03]]
+const PROPS := {"pot": "9a5a3a", "barrel": "6a4a2a", "crate": "8a6a3a"}
 # Room half sizes [min, max] (world units). The camera shows about 52 x 37, so most fight rooms are
 # bigger than the screen. ROOM_REF is the half size the enemy budget, crates and spikes were tuned for.
 const ROOM_HW := [22, 32]

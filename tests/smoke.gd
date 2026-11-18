@@ -63,14 +63,30 @@ func _shot_setup() -> void:
 		for d in g.doors:
 			g.world.try_door(d)
 		var cd: Dictionary = g.doors[0]
+		var near_shot := OS.get_cmdline_user_args().has("near")  # face the visited start room instead
 		for d in g.doors:  # prefer a corridor that leads to a room not yet seen, to show its fog
-			if not d.to.visited:
+			if d.to.visited == near_shot:
 				cd = d
 		var v: Vector2i = Game.DIRS[cd.dir]
-		g.P.x = v.x * (g.AW + cd.len * 0.6)
-		g.P.z = v.y * (g.AH + cd.len * 0.6)
+		var into: float = 0.85 if near_shot else 0.3
+		g.P.x = cd.x + v.x * cd.len * into
+		g.P.z = cd.z + v.y * cd.len * into
 		g.clamp_pos(g.P)
 		g.cam_t = Vector2(g.P.x, g.P.z)
+		# loot left behind: in the start room (shown, it is next door) and in a room further away (map mark)
+		var st: Dictionary = g.rooms[0]
+		st.items.append({kind = "weapon", id = "smg", x = 3.0, z = -2.0, m = null})
+		st.items.append({kind = "heart", x = -2.0, z = 1.0, m = null})
+		st.chests.append({x = -6.0, z = -3.0, type = "normal", open = false, gone = false, hp = D.CHEST_HP, flash = 0.0, m = null})
+		for r in g.rooms:
+			if r != g.room and r != st and not g.room.links.values().has(r.idx):
+				r.visited = true
+				r.cleared = true
+				r.items.append({kind = "key", x = 0.0, z = 0.0, m = null})
+				r.chests.append({x = 2.0, z = 0.0, type = "normal", open = false, gone = false, hp = D.CHEST_HP, flash = 0.0, m = null})
+				g.world.reveal(r)
+				break
+		g.view.show_near()
 	if OS.get_cmdline_user_args().has("surgeon"):  # standing at the altar, no enemies
 		g.enemies.clear()
 		g.items.clear()
@@ -545,6 +561,58 @@ func smoke() -> void:
 			back_ok = _walk(Game.OPP[first_dir]) and g.room.idx == 0
 	print("seamless run: won %s in %d steps, corridor walks that failed %d" % [g.won, steps, walk_fail])
 	print("walk back through opened door: %s" % back_ok)
+	# corridors: doors anywhere on the wall still reach the room, lengths in range, breakables, loot hand-over
+	var door_ok := true
+	var len_ok := true
+	var n_props := 0
+	var lens := []
+	for f in 30:
+		g.new_game()
+		for r in g.rooms:
+			g.world.enter_room(r, "")
+			g.enemies.clear()
+			var reach := g.ai.flood(g.ai.cell_of(0, 0))
+			for d in g.doors:
+				var v: Vector2i = Game.DIRS[d.dir]
+				if reach[g.ai.cell_of(d.x - v.x * 1.5, d.z - v.y * 1.5)] == 9999:
+					door_ok = false
+				var half: float = g.AH if v.x != 0 else g.AW
+				if absf(d.at) > half - D.DOOR_W / 2 - 1.0:
+					door_ok = false
+				if d.len < D.CORRIDOR_MIN - 0.01:
+					len_ok = false
+		for c in g.corridors:
+			n_props += c.props.size()
+			lens.append(c.s1 - c.s0)
+	lens.sort()
+	print("corridors x30 floors: doors reachable and on the wall %s, none shorter than CORRIDOR_MIN %s, length %.0f-%.0f, %.1f breakables each" % [door_ok, len_ok, lens[0], lens[-1], float(n_props) / lens.size()])
+	g.new_game()
+	var cd0: Dictionary = g.doors[0]
+	g.world.try_door(cd0)
+	var cv: Vector2i = Game.DIRS[cd0.dir]
+	var props0 := g.props.size()
+	g.P.x = cd0.x + cv.x * 3.0
+	g.P.z = cd0.z + cv.y * 3.0
+	g.clamp_pos(g.P)
+	var in_corr: bool = g.world.past_wall(cd0) > 1.0
+	g.bullets.append({x = g.P.x, z = g.P.z, vx = cv.x * 0.01, vz = cv.y * 0.01, mine = true, dmg = 1.0, pierce = false, life = 4.0, hits = [], explode = 0.0, big = false, dead = false, m = null})
+	_run(2)
+	var bullet_lives := g.bullets.size() == 1
+	g.bullets.clear()
+	var drops := 0
+	for i in 1000:
+		g.items.clear()
+		var pp := {type = "pot", broken = false, m = null, x = 0.0, z = 0.0}
+		g.props.append(pp)
+		g.world.break_prop(pp)
+		drops += g.items.size()
+	g.items.clear()
+	var it := g.add_item({kind = "key"}, g.P.x, g.P.z)
+	var held_in_corr: bool = g.world.past_wall(cd0, it) > 1.0
+	var from_room: int = g.room.idx
+	var walked := _walk(cd0.dir)
+	var handed: bool = walked and g.items.any(func(i): return is_same(i, it)) and not g.rooms[from_room].items.any(func(i): return is_same(i, it))
+	print("corridor: %d breakables at the start, player can stand in it %s, bullet flies in it %s, drop rate %.1f%% (about 13), loot in it stays there %s and moves to the next room %s" % [props0, in_corr, bullet_lives, drops / 10.0, held_in_corr, handed])
 	# out of ammo: bare-handed kills drop a weapon often, armed kills never do
 	g.new_game()
 	var wd := [0, 0]

@@ -6,6 +6,7 @@ const Game = preload("res://src/game.gd")
 const Shapes = preload("res://src/shapes.gd")
 
 var g: Game
+var near_g: Node3D  # loot of the rooms next to the current one (show_near)
 
 func _init(game: Game) -> void:
 	g = game
@@ -184,6 +185,60 @@ func mk_spike(s: Dictionary) -> Node3D:
 		node.add_child(Shapes.cone(0.15, 0.5, "aa3333", randf_range(-s.w / 2 + 0.2, s.w / 2 - 0.2), 0.25, randf_range(-s.h / 2 + 0.2, s.h / 2 - 0.2)))
 	return node
 
+func mk_altar() -> Node3D:
+	return Shapes.grp([Shapes.box(2.4, 1, 1.4, "8a4a9a", 0, 0.5, 0), Shapes.box(0.2, 1.4, 0.2, "ffffff", 0, 1.7, 0), Shapes.box(0.9, 0.2, 0.2, "ffffff", 0, 1.9, 0)])
+
+func mk_stairs() -> Node3D:
+	return Shapes.grp([Shapes.box(3.4, 0.1, 3.4, "050505", 0, 0.05, 0), Shapes.box(3.4, 0.5, 0.8, "8888aa", 0, 0.25, -1.3), Shapes.box(3.4, 0.3, 0.8, "666688", 0, 0.15, -0.5)])
+
+# Chest lid: thrown back with a dark inside once opened.
+func set_lid(c: Dictionary) -> void:
+	var lid: Node3D = c.m.get_child(1)
+	lid.position = Vector3(0, 1.05, -0.75) if c.open else Vector3(0, 0.85, 0)
+	lid.rotation.x = 1.25 if c.open else 0.0
+	c.m.get_child(2).visible = c.open
+
+# Loads the loot of every visited room next to the current one into the world, so it is there to see
+# as you walk up (still meshes, in world coordinates; only the current room's loot is live).
+# Rooms further away are unloaded; the map marks what they still hold.
+func show_near() -> void:
+	if near_g != null and is_instance_valid(near_g):
+		near_g.queue_free()
+	near_g = Node3D.new()
+	g.floor_g.add_child(near_g)
+	for dir in g.room.links:
+		var r: Dictionary = g.rooms[g.room.links[dir]]
+		if not r.visited:
+			continue
+		var o := g.world.room_off(r)
+		var put := func(n: Node3D, x: float, z: float) -> void:
+			n.position = Vector3(o.x + x, n.position.y, o.y + z)
+			near_g.add_child(n)
+		for i in r.items:
+			var n := mk_item(i)
+			n.position.y = 0.15
+			put.call(n, i.x, i.z)
+		for c in r.chests:
+			var n := mk_chest(c)
+			set_lid({m = n, open = c.open})
+			put.call(n, c.x, c.z)
+		for sp in r.spikes:
+			put.call(mk_spike(sp), sp.x, sp.z)
+		if r.altar != null and not r.altar.used:
+			put.call(mk_altar(), r.altar.x, r.altar.z)
+		if r.stairs != null:
+			put.call(mk_stairs(), r.stairs.x, r.stairs.z)
+
+# A corridor breakable: clay pot, barrel or small crate.
+func mk_prop(p: Dictionary) -> Node3D:
+	var c: String = D.PROPS[p.type]
+	match p.type:
+		"pot":
+			return Shapes.grp([Shapes.ball(0.42, c, 0, 0.42, 0), Shapes.cyl(0.2, 0.25, c, 0, 0.9, 0)])
+		"barrel":
+			return Shapes.grp([Shapes.cyl(0.42, 1.1, c, 0, 0.55, 0), Shapes.cyl(0.44, 0.08, "3a3a3a", 0, 0.3, 0), Shapes.cyl(0.44, 0.08, "3a3a3a", 0, 0.8, 0)])
+	return Shapes.grp([Shapes.box(0.8, 0.8, 0.8, c, 0, 0.4, 0)])
+
 func sync(list: Array, mk: Callable) -> void:
 	for o in list:
 		if o.get("m") == null:
@@ -204,19 +259,16 @@ func render() -> void:
 	for f in g.flyers:
 		f.m.rotation.y = g.time * 22
 	if g.altar != null and g.altar.m == null:
-		g.altar.m = Shapes.grp([Shapes.box(2.4, 1, 1.4, "8a4a9a", 0, 0.5, 0), Shapes.box(0.2, 1.4, 0.2, "ffffff", 0, 1.7, 0), Shapes.box(0.9, 0.2, 0.2, "ffffff", 0, 1.9, 0)])
+		g.altar.m = mk_altar()
 		g.room_g.add_child(g.altar.m)
 		g.altar.m.position = Vector3(g.altar.x, 0, g.altar.z)
 	for c in g.chests:
 		var cs := 1.12 if c.flash > 0 else 1.0
 		c.m.scale = Vector3(cs, cs, cs)
-		var lid: Node3D = c.m.get_child(1)  # an opened chest: lid thrown back, dark and empty inside
-		lid.position = Vector3(0, 1.05, -0.75) if c.open else Vector3(0, 0.85, 0)
-		lid.rotation.x = 1.25 if c.open else 0.0
-		c.m.get_child(2).visible = c.open
+		set_lid(c)  # an opened chest: lid thrown back, dark and empty inside
 	update_doors()
 	if g.stairs != null and g.stairs.m == null:
-		g.stairs.m = Shapes.grp([Shapes.box(3.4, 0.1, 3.4, "050505", 0, 0.05, 0), Shapes.box(3.4, 0.5, 0.8, "8888aa", 0, 0.25, -1.3), Shapes.box(3.4, 0.3, 0.8, "666688", 0, 0.15, -0.5)])
+		g.stairs.m = mk_stairs()
 		g.room_g.add_child(g.stairs.m)
 		g.stairs.m.position = Vector3(g.stairs.x, 0, g.stairs.z)
 	for e in g.enemies:
