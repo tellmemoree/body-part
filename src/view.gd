@@ -135,6 +135,8 @@ func limb(n: Node3D, name: String) -> Node3D:
 func mk_item(i: Dictionary) -> Node3D:
 	if i.kind == "heart":
 		return Shapes.grp([Shapes.ball(0.3, "ee3344", 0, 0.5, 0)])
+	if i.kind == "ammo":
+		return Shapes.grp([Shapes.box(0.5, 0.3, 0.36, "4a5a3a", 0, 0.3, 0), Shapes.box(0.08, 0.2, 0.08, "d4a84a", -0.12, 0.55, 0), Shapes.box(0.08, 0.2, 0.08, "d4a84a", 0, 0.55, 0), Shapes.box(0.08, 0.2, 0.08, "d4a84a", 0.12, 0.55, 0)])
 	if i.kind == "scrap":
 		return Shapes.grp([Shapes.box(0.34, 0.2, 0.3, "8a6a3a", 0, 0.35, 0), Shapes.box(0.2, 0.14, 0.26, "8888a0", 0.12, 0.5, 0.08)])
 	if i.kind == "key":
@@ -234,10 +236,10 @@ func mk_prop(p: Dictionary) -> Node3D:
 	var c: String = D.PROPS[p.type]
 	match p.type:
 		"pot":
-			return Shapes.grp([Shapes.ball(0.42, c, 0, 0.42, 0), Shapes.cyl(0.2, 0.25, c, 0, 0.9, 0)])
+			return Shapes.share(Shapes.grp([Shapes.ball(0.42, c, 0, 0.42, 0), Shapes.cyl(0.2, 0.25, c, 0, 0.9, 0)]))
 		"barrel":
-			return Shapes.grp([Shapes.cyl(0.42, 1.1, c, 0, 0.55, 0), Shapes.cyl(0.44, 0.08, "3a3a3a", 0, 0.3, 0), Shapes.cyl(0.44, 0.08, "3a3a3a", 0, 0.8, 0)])
-	return Shapes.grp([Shapes.box(0.8, 0.8, 0.8, c, 0, 0.4, 0)])
+			return Shapes.share(Shapes.grp([Shapes.cyl(0.42, 1.1, c, 0, 0.55, 0), Shapes.cyl(0.44, 0.08, "3a3a3a", 0, 0.3, 0), Shapes.cyl(0.44, 0.08, "3a3a3a", 0, 0.8, 0)]))
+	return Shapes.share(Shapes.grp([Shapes.box(0.8, 0.8, 0.8, c, 0, 0.4, 0)]))
 
 func sync(list: Array, mk: Callable) -> void:
 	for o in list:

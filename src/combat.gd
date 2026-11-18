@@ -229,10 +229,6 @@ func update_bullets(dt: float) -> void:
 					if not b.dead and not c.open and g.d2(b, c) < 1:
 						g.loot.damage_chest(c)
 						b.dead = true
-				for p in g.props:
-					if not b.dead and not p.broken and g.d2(b, p) < 0.7:
-						g.world.break_prop(p)
-						b.dead = true
 		elif g.P.dash == null and g.d2(b, g.P) < 0.75:
 			var front: bool = g.ang_diff(atan2(-b.vz, -b.vx), g.P.aim) < 1.1
 			if front and (g.P.shL > 0 or g.P.shR > 0):
@@ -242,6 +238,11 @@ func update_bullets(dt: float) -> void:
 			else:
 				b.dead = true
 				g.body.hurt(1, 0.35)
+		if not b.get("fly", false):  # any shot, yours or an enemy's, smashes a breakable and stops there
+			for p in g.props:
+				if not b.dead and not p.broken and g.d2(b, p) < 0.7:
+					g.world.break_prop(p)
+					b.dead = true
 		if not g.in_space(b.x, b.z) or b.life <= 0 or (g.in_block(b.x, b.z, 0.1) and not b.get("fly", false)):
 			b.dead = true
 		if b.dead and b.explode > 0:

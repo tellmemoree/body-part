@@ -1,6 +1,22 @@
 extends RefCounted
 # Mesh building helpers: coloured boxes, spheres, cylinders and cones. All static.
 
+static var _shared := {}
+
+# One material per colour, shared by every mesh that uses it. Only for meshes whose colour never
+# changes (breakables): changing a shared material changes all of them.
+static func shared(c: String) -> StandardMaterial3D:
+	if not _shared.has(c):
+		_shared[c] = mat(c)
+	return _shared[c]
+
+# Gives every mesh in a group the shared material of its colour.
+static func share(n: Node3D) -> Node3D:
+	for ch in n.get_children():
+		if ch is MeshInstance3D and ch.mesh.material is StandardMaterial3D:
+			ch.mesh.material = shared(ch.mesh.material.albedo_color.to_html(false))
+	return n
+
 static func mat(c) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(c) if c is String else c

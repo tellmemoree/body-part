@@ -565,6 +565,9 @@ func smoke() -> void:
 	var door_ok := true
 	var len_ok := true
 	var n_props := 0
+	var room_props := 0
+	var n_rooms := 0
+	var props_bad := 0
 	var lens := []
 	for f in 30:
 		g.new_game()
@@ -584,8 +587,20 @@ func smoke() -> void:
 		for c in g.corridors:
 			n_props += c.props.size()
 			lens.append(c.s1 - c.s0)
+		for r in g.rooms:
+			room_props += r.props.size()
+			n_rooms += 1
+			for p in r.props:
+				var lx: float = p.wx - r.ox
+				var lz: float = p.wz - r.oz
+				if absf(lx) > r.hw or absf(lz) > r.hh or r.blocks.any(func(b): return absf(lx - b.x) < b.w / 2 + 0.5 and absf(lz - b.z) < b.h / 2 + 0.5):
+					props_bad += 1
+	var total_len := 0.0
+	for l in lens:
+		total_len += l
 	lens.sort()
-	print("corridors x30 floors: doors reachable and on the wall %s, none shorter than CORRIDOR_MIN %s, length %.0f-%.0f, %.1f breakables each" % [door_ok, len_ok, lens[0], lens[-1], float(n_props) / lens.size()])
+	print("corridors x30 floors: doors reachable and on the wall %s, none shorter than CORRIDOR_MIN %s, length %.0f-%.0f, %.2f breakables per unit of corridor" % [door_ok, len_ok, lens[0], lens[-1], n_props / total_len])
+	print("room breakables: %.1f per room, %d outside the room or in an obstacle" % [float(room_props) / n_rooms, props_bad])
 	g.new_game()
 	var cd0: Dictionary = g.doors[0]
 	g.world.try_door(cd0)
@@ -595,6 +610,7 @@ func smoke() -> void:
 	g.P.z = cd0.z + cv.y * 3.0
 	g.clamp_pos(g.P)
 	var in_corr: bool = g.world.past_wall(cd0) > 1.0
+	g.props = []  # a clear line, so the shot meets no breakable
 	g.bullets.append({x = g.P.x, z = g.P.z, vx = cv.x * 0.01, vz = cv.y * 0.01, mine = true, dmg = 1.0, pierce = false, life = 4.0, hits = [], explode = 0.0, big = false, dead = false, m = null})
 	_run(2)
 	var bullet_lives := g.bullets.size() == 1
@@ -607,12 +623,33 @@ func smoke() -> void:
 		g.world.break_prop(pp)
 		drops += g.items.size()
 	g.items.clear()
+	# breakables stop shots (yours and enemies'), and an ammo pickup tops up held guns
+	g.props = [{type = "pot", broken = false, m = null, x = g.P.x + cv.x * 2.0, z = g.P.z + cv.y * 2.0}]
+	g.bullets.append({x = g.P.x + cv.x * 4.0, z = g.P.z + cv.y * 4.0, vx = -cv.x * 20.0, vz = -cv.y * 20.0, mine = false, dmg = 1.0, pierce = false, life = 4.0, hits = [], explode = 0.0, big = false, dead = false, m = null})
+	var hp0: int = g.P.hp
+	g.P.inv = 0.0
+	g.update(1.0 / 60)
+	for k in 10:
+		g.update(1.0 / 60)
+	var cover: bool = g.props.is_empty() and g.bullets.is_empty()
+	g.P.hp = hp0
+	g.items.clear()
+	g.guns.give_gun("rh", "pistol", 8, 10)
+	var am := g.add_item({kind = "ammo"}, g.P.x, g.P.z)
+	g.player.interact("R")
+	var res_after: int = g.P.parts.rh.res
+	g.add_item({kind = "ammo"}, g.P.x, g.P.z)
+	g.guns.give_gun("rh", "pistol")
+	g.player.interact("R")
+	var full_refused: bool = g.items.size() == 1
+	print("breakable stops an enemy shot: %s; ammo: pistol spare 10 -> %d (+20), refused when full %s" % [cover, res_after, full_refused])
+	g.items.clear()
 	var it := g.add_item({kind = "key"}, g.P.x, g.P.z)
 	var held_in_corr: bool = g.world.past_wall(cd0, it) > 1.0
 	var from_room: int = g.room.idx
 	var walked := _walk(cd0.dir)
 	var handed: bool = walked and g.items.any(func(i): return is_same(i, it)) and not g.rooms[from_room].items.any(func(i): return is_same(i, it))
-	print("corridor: %d breakables at the start, player can stand in it %s, bullet flies in it %s, drop rate %.1f%% (about 13), loot in it stays there %s and moves to the next room %s" % [props0, in_corr, bullet_lives, drops / 10.0, held_in_corr, handed])
+	print("corridor: %d breakables at the start, player can stand in it %s, bullet flies in it %s, drop rate %.1f%% (about 7), loot in it stays there %s and moves to the next room %s" % [props0, in_corr, bullet_lives, drops / 10.0, held_in_corr, handed])
 	# out of ammo: bare-handed kills drop a weapon often, armed kills never do
 	g.new_game()
 	var wd := [0, 0]

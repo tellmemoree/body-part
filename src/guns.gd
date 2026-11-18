@@ -103,6 +103,31 @@ func drop_held(s: String) -> void:
 	g.add_item(it, g.P.x + randf_range(-1.5, 1.5), g.P.z + randf_range(-1.5, 1.5))
 	g.dirty = true
 
+# Ammo pickup: every held gun with a magazine gets AMMO_REFILL of its total ammo as spare, up to full.
+# Returns what was filled ("pistol +20, SMG +30"), or "" (and says why) when nothing could take it.
+func add_ammo() -> String:
+	var out := []
+	var any_gun := false
+	var done := {}
+	for s in ["lh", "rh"]:
+		var h = g.P.parts[s]
+		if h == null or h.get("held") == null or done.has(h.held) or not D.GUNS[h.held].has("mag"):
+			continue
+		done[h.held] = true
+		any_gun = true
+		var gun = D.GUNS[h.held]
+		var room: int = gun.ammo - h.mag - h.res
+		var n: int = mini(room, ceili(gun.ammo * D.AMMO_REFILL))
+		if n <= 0:
+			continue
+		for k in gun_slots(s):
+			g.P.parts[k].res += n
+		out.append("%s +%d" % [gun.n, n])
+	if out.is_empty():
+		g.say("Your guns are full." if any_gun else "No gun that takes ammo.")
+		return ""
+	return ", ".join(PackedStringArray(out))
+
 # R: reload every gun whose magazine is not full.
 func reload_all() -> void:
 	if g.over or g.P.is_empty():

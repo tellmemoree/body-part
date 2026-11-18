@@ -97,6 +97,11 @@ func take_item(it: Dictionary, side: String) -> bool:
 			return false
 		h.fingers += 1
 		g.say("Finger reattached.")
+	elif it.kind == "ammo":
+		var got := g.guns.add_ammo()
+		if got == "":
+			return false
+		g.say("Ammo: " + got)
 	elif it.kind == "key":
 		g.P.keys += 1
 		g.say("Picked up a key.")

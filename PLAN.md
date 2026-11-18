@@ -166,10 +166,13 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
         biggest room so corridors stay short (`CORRIDOR_MIN`). Spitters only spit within 15
         (`SPIT_RANGE`), never from off screen
   - [x] Corridors are breaks: random length (6 to about 30; `CORRIDOR_MIN`, `CORRIDOR_MAX`,
-        `CORRIDOR_LONG`), the doorway anywhere along the wall, filled with pots, barrels and small
-        crates that break on any hit or when walked into, and sometimes drop a heart, finger or
-        scrap (`PROPS`, `PROP_EVERY`, `PROP_DROP`). Start and surgeon rooms a bit bigger (32 x 20,
-        32 x 22) so corridors next to them stay short
+        `CORRIDOR_LONG`), the doorway anywhere along the wall. Start and surgeon rooms a bit bigger
+        (32 x 20, 32 x 22) so corridors next to them stay short
+  - [x] Breakables: corridors are filled with pots, barrels and small crates (two lanes, a spot every
+        1.3, three in four taken), rooms get clusters of 3-7 along their walls (about 20 per room).
+        Any hit, any shot (enemy shots too, so they are cover) or walking into one breaks it; 7% drop
+        something: ammo 4%, heart 1.5%, finger 1.5% (`PROP_DROP`). New ammo pickup: each held gun
+        gets a quarter of its total ammo as spare (`AMMO_REFILL`)
   - [ ] The body panel (top right) now covers enemies more often in big rooms; consider shrinking
         it or fading it while enemies are under it
   - [x] Step 3: loot of the rooms next to yours is loaded (items, chests, spikes, altar, stairs) so you

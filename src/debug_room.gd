@@ -63,7 +63,7 @@ func stock_debug() -> void:
 	for id in D.GUNS:
 		debug_item({kind = "weapon", id = id}, -24.2 + col2 * 4.4, z)
 		col2 += 1
-	for k in ["heart", "finger", "key", "scrap"]:
+	for k in ["heart", "finger", "key", "scrap", "ammo"]:
 		debug_item({kind = k}, -24.2 + col2 * 4.4, z)
 		col2 += 1
 	var cx := 12.0

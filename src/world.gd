@@ -208,17 +208,61 @@ func clear_door_lanes(r: Dictionary) -> void:
 			keep.append(b)
 	r.blocks = keep
 
-# Fills a corridor with breakables (world coordinates), leaving its two ends clear.
+# Fills a corridor with breakables (world coordinates): a spot every PROP_STEP along two lanes,
+# each filled with chance PROP_FILL, leaving the two ends clear.
 func fill_corridor(c: Dictionary) -> void:
-	var ln: float = c.s1 - c.s0
-	var n := roundi(ln / D.PROP_EVERY * randf_range(0.5, 1.0))
-	for i in n:
-		var along := randf_range(c.s0 + 2.0, c.s1 - 2.0)
-		var across: float = c.w + randf_range(-1, 1) * (D.DOOR_W / 2 - 0.7)
-		var p := {type = D.PROPS.keys().pick_random(), broken = false, m = null}
-		p.wx = along if c.ew else across
-		p.wz = across if c.ew else along
-		c.props.append(p)
+	var along: float = c.s0 + 1.6
+	while along < c.s1 - 1.6:
+		for lane in [-0.9, 0.9]:
+			if randf() < D.PROP_FILL:
+				var a := along + randf_range(-0.2, 0.2)
+				var across: float = c.w + lane + randf_range(-0.15, 0.15)
+				c.props.append(_prop(a if c.ew else across, across if c.ew else a))
+		along += D.PROP_STEP
+
+func _prop(wx: float, wz: float) -> Dictionary:
+	return {type = D.PROPS.keys().pick_random(), broken = false, m = null, wx = wx, wz = wz}
+
+# Clusters of breakables against a room's walls and in its corners (world coordinates in r.props),
+# clear of obstacles and doorways. More clusters in bigger rooms.
+func fill_room(r: Dictionary) -> void:
+	r.props = []
+	if r.type == "debug":
+		return
+	var o := room_off(r)
+	var hw: float = r.hw
+	var hh: float = r.hh
+	var doors := []
+	for dir in r.links:
+		var v: Vector2i = Game.DIRS[dir]
+		var at: float = r.door_at[dir]
+		doors.append(Vector2(v.x * hw if v.x != 0 else at, v.y * hh if v.y != 0 else at))
+	var placed := []
+	for i in roundi(randi_range(D.PROP_CLUSTERS[0], D.PROP_CLUSTERS[1]) * sqrt(area_k(r))):
+		var cx := randf_range(-hw + 1, hw - 1)
+		var cz := randf_range(-hh + 1, hh - 1)
+		match randi() % 4:  # against one of the four walls (corners come up on their own)
+			0:
+				cz = -hh + 1
+			1:
+				cz = hh - 1
+			2:
+				cx = -hw + 1
+			3:
+				cx = hw - 1
+		var want := randi_range(D.PROP_CLUSTER[0], D.PROP_CLUSTER[1])
+		var got := 0
+		for t in want * 4:
+			if got >= want:
+				break
+			var p := Vector2(clampf(cx + randf_range(-2.5, 2.5), -hw + 0.7, hw - 0.7), clampf(cz + randf_range(-2.5, 2.5), -hh + 0.7, hh - 0.7))
+			if doors.any(func(d): return d.distance_to(p) < 4.0) or placed.any(func(q): return q.distance_to(p) < 0.95):
+				continue
+			if r.blocks.any(func(b): return absf(p.x - b.x) < b.w / 2 + 0.6 and absf(p.y - b.z) < b.h / 2 + 0.6):
+				continue
+			placed.append(p)
+			r.props.append(_prop(o.x + p.x, o.y + p.y))
+			got += 1
 
 func floor_color(r: Dictionary) -> Color:
 	if r.type == "dark":
@@ -233,6 +277,7 @@ func build_floor() -> void:
 	place_rooms()
 	for r in g.rooms:
 		clear_door_lanes(r)
+		fill_room(r)
 		r.erase("geo")
 		build_room_geo(r)
 	for c in g.corridors:
@@ -278,6 +323,10 @@ func build_room_geo(r: Dictionary) -> void:
 		b.m = Shapes.box(b.w, b.ht, b.h, b.c, o.x + b.x, b.ht / 2, o.y + b.z)
 		b.m.visible = r.visited
 		g.floor_g.add_child(b.m)
+	for p in r.get("props", []):
+		p.m = g.view.mk_prop(p)
+		p.m.position = Vector3(p.wx, 0, p.wz)
+		g.floor_g.add_child(p.m)
 	var fog := Shapes.box(hw * 2, 2.05, hh * 2, D.FOG, o.x, 1.025, o.y)
 	fog.mesh.material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fog.visible = not r.visited
@@ -410,7 +459,8 @@ func free_spot(mx: float, mz: float) -> Vector2:
 	var v := Vector2.ZERO
 	for i in 20:
 		v = Vector2(randf_range(-g.AW + mx, g.AW - mx), randf_range(-g.AH + mz, g.AH - mz))
-		if not near_door(v.x, v.y) and not g.in_block(v.x, v.y, 1.2) and Vector2(v.x - g.P.x, v.y - g.P.z).length() > 5:
+		if not near_door(v.x, v.y) and not g.in_block(v.x, v.y, 1.2) and Vector2(v.x - g.P.x, v.y - g.P.z).length() > 5 \
+				and not g.props.any(func(p): return Vector2(p.x - v.x, p.z - v.y).length() < 1.6):
 			break
 	return v
 
@@ -498,18 +548,22 @@ func enter_room(r: Dictionary, from_dir: String, walked := false) -> void:
 		clear_room()
 	g.loot.rescue_hand()
 
-# The current room's corridors: their unbroken breakables go into g.props (in this room's coordinates),
-# and loot lying in them that a neighbour room held is handed to this room, so it can be picked up here.
+# The current room's and its corridors' unbroken breakables go into g.props (in this room's coordinates),
+# and loot lying in a corridor that a neighbour room held is handed to this room, so it can be picked up here.
 func load_corridors(r: Dictionary) -> void:
 	var o := room_off(r)
 	g.props = []
+	var lists := [r.get("props", [])]
 	for dir in r.get("corr", {}):
-		var c: Dictionary = r.corr[dir]
-		for p in c.props:
+		lists.append(r.corr[dir].props)
+	for list in lists:
+		for p in list:
 			if not p.broken:
 				p.x = p.wx - o.x
 				p.z = p.wz - o.y
 				g.props.append(p)
+	for dir in r.get("corr", {}):
+		var c: Dictionary = r.corr[dir]
 		var nb: Dictionary = g.rooms[r.links[dir]]
 		var no := room_off(nb)
 		var keep := []
@@ -525,7 +579,7 @@ func load_corridors(r: Dictionary) -> void:
 				keep.append(i)
 		nb.items = keep
 
-# Smashes a corridor breakable: a puff of splinters and, sometimes, a small drop (PROP_DROP).
+# Smashes a breakable: a puff of splinters and, sometimes, a small drop (PROP_DROP).
 func break_prop(p: Dictionary) -> void:
 	if p.broken:
 		return
