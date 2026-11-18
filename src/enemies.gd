@@ -162,7 +162,7 @@ func update_enemies(dt: float) -> void:
 			elif d < 11:
 				mv = 0
 			e.cd -= edt
-			if e.cd <= 0:
+			if e.cd <= 0 and d < D.SPIT_RANGE:
 				e.cd = 1.9
 				var sa: float = a if e.limbs.has("eye") else randf() * TAU  # blind: spits anywhere
 				g.bullets.append({x = e.x, z = e.z, vx = cos(sa) * 11, vz = sin(sa) * 11, mine = false, dmg = 1.0, pierce = false, life = 4.0, hits = [], explode = 0.0, big = false, dead = false, m = null})

@@ -135,7 +135,7 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
         it cannot). Without the wheel it works as before: nearest usable item first
   - [x] Camera: free inside cleared rooms and corridors; in a fight it stays inside the room.
         Unentered rooms are hidden under fog until you walk in (see Seamless floors)
-  - [ ] Rooms bigger than the screen
+  - [x] Rooms bigger than the screen (seamless floors, step 2)
   - [x] Surgeon explains itself: from afar "trades one flesh part for two rare items"; up close,
         per side, which parts it could take ("Q: left side - your eye, ear or leg"), greyed out
         when that side has nothing it will take
@@ -155,12 +155,20 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] Door collision (from playtest): doors now sit flush in a gap in the wall and block like
       walls until opened (seamless floors, step 1)
 - [~] Seamless floors
-  - [x] Step 1: the whole floor is built at once, rooms in a grid (`CELL_W` x `CELL_H`), joined by
+  - [x] Step 1: the whole floor is built at once, rooms on a grid, joined by
         corridors through `DOOR_W` gaps in the walls. Opening a door no longer moves you: you walk
         down the corridor and into the next room. Doors sit flush in the wall (fixes the door
         collision note above). Unvisited rooms are covered by fog. The camera follows you and stays
         inside the room during a fight. Old start-of-run tutorial message removed
-  - [ ] Step 2: rooms bigger than the screen (scale `gen_layout` sizes, retune spawn counts)
+  - [x] Step 2: rooms bigger than the screen. Fight-type rooms are 44-64 x 28-44 (`ROOM_HW`,
+        `ROOM_HH`; the screen shows about 52 x 37), the exit room 60 x 40. Enemy budget grows with
+        area^0.6 (`ROOM_FILL`), crates and spikes with area. Grid columns / rows are packed to their
+        biggest room so corridors stay short (`CORRIDOR_MIN`). Spitters only spit within 15
+        (`SPIT_RANGE`), never from off screen
+  - [ ] Corridors from the small start / surgeon rooms can be long (their row or column also holds
+        big rooms); nudge small rooms toward the neighbour they share a corridor with
+  - [ ] The body panel (top right) now covers enemies more often in big rooms; consider shrinking
+        it or fading it while enemies are under it
   - [ ] Step 3: show the loot, chests and altar of visited rooms you can see from outside (today
         only the current room's things are drawn, so a room you just left looks empty)
   - [ ] Step 4: decide what corridors are for: enemies that follow you out, traps, short / bent

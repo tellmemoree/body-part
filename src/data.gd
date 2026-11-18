@@ -197,10 +197,16 @@ const ROOMS := {
 const LOCK_CHANCE := [0.1, 0.2, 0.3, 0.3, 0.35]
 const DARK_LOCK := [0.3, 0.5, 0.7, 0.85, 1.0]
 const FIGHT_CHEST := 0.35  # chance that a fight room has a chest
-# Seamless floors: every room sits in a grid cell this big (world units), joined by corridors.
-# A cell must hold the largest room (40 x 26) plus the shortest corridor.
-const CELL_W := 48.0
-const CELL_H := 34.0
+# Seamless floors: rooms sit on a grid; each grid column is as wide as its widest room (and each
+# row as deep as its deepest), with at least CORRIDOR_MIN of corridor between neighbouring columns / rows.
+const CORRIDOR_MIN := 6.0
+# Room half sizes [min, max] (world units). The camera shows about 52 x 37, so most fight rooms are
+# bigger than the screen. ROOM_REF is the half size the enemy budget, crates and spikes were tuned for.
+const ROOM_HW := [22, 32]
+const ROOM_HH := [14, 22]
+const ROOM_REF := Vector2(16.5, 11.0)
+const ROOM_FILL := 0.6  # enemy budget grows with room area to this power (1 = in proportion)
+const SPIT_RANGE := 15.0  # spitters only spit from this close, so they never shoot from off screen
 const DOOR_W := 4.0  # width of a doorway and its corridor
 const FOG := "0c0c10"  # unvisited rooms are hidden under a block of this colour (the background)
 const DOOR_LANE := 6.0  # width of the spike-free strip in front of each door

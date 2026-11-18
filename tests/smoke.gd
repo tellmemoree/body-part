@@ -504,7 +504,7 @@ func smoke() -> void:
 		r.depth = 8
 		g.world.gen_layout(r)
 		g.world.enter_room(r, ["N", "S", "E", "W"].pick_random())
-		for k in 600:  # enemies must path around obstacles to reach a standing player
+		for k in 1500:  # enemies must path around obstacles to reach a standing player (25 s: rooms are big)
 			_run(1)
 		for e in g.enemies:
 			if e.type in ["grunt", "slasher", "brute"] and g.d2(e, g.P) > 4:

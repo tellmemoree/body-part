@@ -35,10 +35,12 @@ func gen_layout(r: Dictionary) -> void:
 		r.hh = 9.0
 		style = ["open", "pillars"].pick_random()
 	elif r.type == "exit":
+		r.hw = float(D.ROOM_HW[1]) - 2
+		r.hh = float(D.ROOM_HH[1]) - 2
 		style = "pillars"
 	else:
-		r.hw = float(randi_range(13, 20))
-		r.hh = float(randi_range(9, 13))
+		r.hw = float(randi_range(D.ROOM_HW[0], D.ROOM_HW[1]))
+		r.hh = float(randi_range(D.ROOM_HH[0], D.ROOM_HH[1]))
 	var hw: float = r.hw
 	var hh: float = r.hh
 	r.style = style
@@ -68,8 +70,8 @@ func gen_layout(r: Dictionary) -> void:
 				for szn in [-1, 1]:
 					r.blocks.append({x = sx * (3.0 + l / 2), z = szn * hh * 0.5, w = l, h = 1.2, ht = 2.4, c = wall})
 		"crates":
-			for i in 60:
-				if r.blocks.size() >= randi_range(5, 9):
+			for i in 200:
+				if r.blocks.size() >= roundi(randi_range(5, 9) * area_k(r)):
 					break
 				var w := randf_range(1.5, 3)
 				var h := randf_range(1.5, 3)
@@ -84,9 +86,39 @@ func gen_layout(r: Dictionary) -> void:
 				if not clash:
 					r.blocks.append({x = x, z = z, w = w, h = h, ht = 1.3, c = "6b5030"})
 
-# Where a room's centre sits in the floor's world (rooms are laid out on a grid of cells).
+# How much bigger a room's floor is than the size the numbers were tuned for (1 = same).
+func area_k(r: Dictionary) -> float:
+	return maxf(1.0, r.hw * r.hh / (D.ROOM_REF.x * D.ROOM_REF.y))
+
+# Where a room's centre sits in the floor's world (set by place_rooms; rooms made outside a floor sit at 0, 0).
 func room_off(r: Dictionary) -> Vector2:
-	return Vector2(r.gx * D.CELL_W, r.gy * D.CELL_H)
+	return Vector2(r.get("ox", 0.0), r.get("oz", 0.0))
+
+# Lays the floor's grid out in the world: each column as wide as its widest room, each row as deep as
+# its deepest, CORRIDOR_MIN apart. Corridors are then as short as the room sizes allow.
+func place_rooms() -> void:
+	var col := {}
+	var row := {}
+	for r in g.rooms:
+		col[r.gx] = maxf(col.get(r.gx, 0.0), r.hw)
+		row[r.gy] = maxf(row.get(r.gy, 0.0), r.hh)
+	var cx := _centres(col)
+	var cz := _centres(row)
+	for r in g.rooms:
+		r.ox = cx[r.gx]
+		r.oz = cz[r.gy]
+
+# Centre of each grid line, given the half size of each: neighbours sit half + CORRIDOR_MIN + half apart.
+func _centres(half: Dictionary) -> Dictionary:
+	var ks := half.keys()
+	ks.sort()
+	var out := {}
+	var at := 0.0
+	for i in ks.size():
+		if i > 0:
+			at += half[ks[i - 1]] + D.CORRIDOR_MIN + half[ks[i]]
+		out[ks[i]] = at
+	return out
 
 func floor_color(r: Dictionary) -> Color:
 	if r.type == "dark":
@@ -98,6 +130,7 @@ func floor_color(r: Dictionary) -> Color:
 func build_floor() -> void:
 	for c in g.floor_g.get_children():
 		c.queue_free()
+	place_rooms()
 	for r in g.rooms:
 		r.erase("geo")
 		build_room_geo(r)
@@ -380,9 +413,10 @@ func populate(r: Dictionary) -> void:
 	if type == "surgeon":
 		g.altar = {x = 0.0, z = -2.0, used = false, m = null}
 		return
-	var budget := minf(11.0, 1.5 + df)
+	var fill := pow(area_k(r), D.ROOM_FILL)  # bigger rooms hold more enemies, but not in proportion
+	var budget := minf(11.0, 1.5 + df) * fill
 	if type == "treasure":
-		budget = minf(6.0, 0.5 + df * 0.5)
+		budget = minf(6.0, 0.5 + df * 0.5) * fill
 	if type == "elite" or type == "exit":
 		g.ai.spawn("brute", {elite = true})
 		budget = maxf(0.0, budget - 3)
@@ -418,7 +452,7 @@ func populate(r: Dictionary) -> void:
 		var v := free_spot(4, 4)
 		g.chests.append({x = v.x, z = v.y, type = ct, open = false, gone = false, hp = D.CHEST_HP, flash = 0.0, m = null})
 	if df >= 2:
-		for i in randi_range(0, 3):
+		for i in roundi(randi_range(0, 3) * area_k(r)):
 			var w := randf_range(2, 4)
 			var h := randf_range(2, 4)
 			for t in 20:

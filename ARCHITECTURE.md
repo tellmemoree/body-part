@@ -175,8 +175,9 @@ new_game() → world.next_floor() → world.gen_floor() → world.build_floor() 
    player walks out of a corridor: world.check_transit() → enter_room(next, dir, walked = true)
 ```
 
-- Seamless floors: every room has a fixed place in one world, `room_off(r)` = its grid cell times
-  `CELL_W` / `CELL_H` (in `data.gd`). `build_floor()` builds all rooms (`build_room_geo()`: floor, walls
+- Seamless floors: every room has a fixed place in one world, `room_off(r)` (`r.ox`, `r.oz`), set by
+  `place_rooms()`: each grid column is as wide as its widest room and each row as deep as its deepest,
+  `CORRIDOR_MIN` apart (in `data.gd`). `build_floor()` builds all rooms (`build_room_geo()`: floor, walls
   with a `DOOR_W` gap per link, a door mesh per link in `r.door_m`, obstacles, a fog block in `r.fog_m`)
   and one corridor per link (`build_corridor()`) under `g.floor_g`.
 - Game logic still runs in the current room's own coordinates (centre 0, 0; walls at `AW` / `AH`).
@@ -201,6 +202,9 @@ new_game() → world.next_floor() → world.gen_floor() → world.build_floor() 
 - Rooms remember their loot because the lists are stored in the room dictionary, not in nodes.
 - `diff()` is the difficulty number: it grows by 2.5 per floor and 0.4 per room of depth, and feeds
   enemy count and hit points.
+- Room size: fight-type rooms are `ROOM_HW` x `ROOM_HH` (half sizes), mostly bigger than the screen.
+  `area_k(r)` is how much bigger than `ROOM_REF` (the size the numbers were tuned for) a room is; the
+  enemy budget grows with `area_k ^ ROOM_FILL`, crates and spike patches with `area_k`.
 - Room types and their labels are in `data.gd` `ROOMS`; door colours in `DOOR_COLOR`. `room_known()`
   decides whether a door shows its room's name and colour or a grey "?".
 
