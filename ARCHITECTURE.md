@@ -194,13 +194,15 @@ new_game() → world.next_floor() → world.gen_floor() → world.build_floor() 
   from `clamp_pos()` for the player and for loot) keeps them in the doorway and its corridor; the player
   only while no enemies are left. Once past the far room's wall line (`past_wall(d) > d.len`), that room
   becomes current. `g.in_space()` is the open floor bullets may fly through (room plus open corridors).
-- Breakables (`PROPS`): corridors are filled with them (`fill_corridor()`: a spot every `PROP_STEP` on two
-  lanes, `PROP_FILL` of them taken) and rooms get clusters along their walls (`fill_room()`, clear of
+- Breakables (`PROPS`): corridors are filled with them (`fill_corridor()`: scattered over the whole width,
+  about `PROP_DENSITY` per unit of length) and rooms get clusters along their walls (`fill_room()`, clear of
   doorways and obstacles). They are made with the floor, in world coordinates (`c.props`, `r.props`), and
   their meshes live in `floor_g` (sharing one material per colour, `Shapes.share()`); fog hides the ones in
   unvisited rooms. `load_corridors()` puts the current room's and its corridors' unbroken ones in `g.props`
   with local `x` / `z`. Melee, any shot (yours or an enemy's: they work as cover), explosions and walking
-  into one call `world.break_prop()`, which sometimes drops ammo, a heart or a finger (`PROP_DROP`).
+  into one call `world.break_prop()`. A room breakable rolls `PROP_DROP` (ammo, heart, finger); a corridor
+  breakable drops nothing unless it holds one of the floor's hidden drops (`hide_corridor_drops()`:
+  `CORRIDOR_DROPS`, 1-2 per floor, up to 4, stored as `p.drop`).
   Loot lying in a corridor belongs to whichever room the player is in: `load_corridors()` takes it over
   from the neighbour when the player walks in.
 - Ammo pickup: `guns.add_ammo()` adds `AMMO_REFILL` of each held gun's total to its spare (up to full).

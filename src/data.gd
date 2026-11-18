@@ -204,14 +204,16 @@ const CORRIDOR_MAX := 14.0  # the gap between neighbouring grid columns / rows i
 const CORRIDOR_LONG := 26.0  # no corridor longer than this (room placement is retried until none is)
 # Breakables (pots, barrels, small crates) fill the corridors and stand in clusters along room walls.
 # Any hit, any shot (yours or an enemy's) or walking into one breaks it.
-# Corridors: a spot every PROP_STEP along two lanes, each filled with chance PROP_FILL.
+# Corridors: scattered across the whole width, about PROP_DENSITY per unit of length.
 # Rooms: PROP_CLUSTERS [min, max] clusters (more in big rooms) of PROP_CLUSTER [min, max] each.
-# PROP_DROP: chance of each drop per breakable (else nothing).
-const PROP_STEP := 1.3
-const PROP_FILL := 0.75
+# PROP_DROP: what a drop is and the chance per room breakable (else nothing).
+# Corridor breakables drop nothing, except CORRIDOR_DROPS per floor: [count, chance] (1-2, up to 4),
+# hidden in random corridor breakables when the floor is built; what they are follows PROP_DROP's odds.
+const PROP_DENSITY := 1.1
 const PROP_CLUSTERS := [2, 4]
 const PROP_CLUSTER := [3, 7]
 const PROP_DROP := [["ammo", 0.04], ["heart", 0.015], ["finger", 0.015]]
+const CORRIDOR_DROPS := [[1, 0.4], [2, 0.4], [3, 0.12], [4, 0.08]]
 const PROPS := {"pot": "9a5a3a", "barrel": "6a4a2a", "crate": "8a6a3a"}
 const AMMO_REFILL := 0.25  # an ammo pickup adds this share of each held gun's total ammo to its spare
 # Room half sizes [min, max] (world units). The camera shows about 52 x 37, so most fight rooms are

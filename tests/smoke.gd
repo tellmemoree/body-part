@@ -569,6 +569,8 @@ func smoke() -> void:
 	var n_rooms := 0
 	var props_bad := 0
 	var lens := []
+	var drop_counts := {}
+	var mid_props := 0
 	for f in 30:
 		g.new_game()
 		for r in g.rooms:
@@ -584,9 +586,16 @@ func smoke() -> void:
 					door_ok = false
 				if d.len < D.CORRIDOR_MIN - 0.01:
 					len_ok = false
+		var fdrops := 0
 		for c in g.corridors:
 			n_props += c.props.size()
 			lens.append(c.s1 - c.s0)
+			for p in c.props:
+				if p.get("drop", "") != "":
+					fdrops += 1
+				if absf((p.wz if c.ew else p.wx) - c.w) < 0.5:
+					mid_props += 1
+		drop_counts[fdrops] = drop_counts.get(fdrops, 0) + 1
 		for r in g.rooms:
 			room_props += r.props.size()
 			n_rooms += 1
@@ -600,6 +609,9 @@ func smoke() -> void:
 		total_len += l
 	lens.sort()
 	print("corridors x30 floors: doors reachable and on the wall %s, none shorter than CORRIDOR_MIN %s, length %.0f-%.0f, %.2f breakables per unit of corridor" % [door_ok, len_ok, lens[0], lens[-1], n_props / total_len])
+	var dk := drop_counts.keys()
+	dk.sort()
+	print("corridor drops per floor (floors with each count): %s; breakables in the middle third of the width: %d of %d" % [dk.map(func(k): return "%d: %d" % [k, drop_counts[k]]), mid_props, n_props])
 	print("room breakables: %.1f per room, %d outside the room or in an obstacle" % [float(room_props) / n_rooms, props_bad])
 	g.new_game()
 	var cd0: Dictionary = g.doors[0]
@@ -618,7 +630,7 @@ func smoke() -> void:
 	var drops := 0
 	for i in 1000:
 		g.items.clear()
-		var pp := {type = "pot", broken = false, m = null, x = 0.0, z = 0.0}
+		var pp := {type = "pot", broken = false, m = null, x = 0.0, z = 0.0}  # a room breakable: rolls PROP_DROP
 		g.props.append(pp)
 		g.world.break_prop(pp)
 		drops += g.items.size()
@@ -642,6 +654,19 @@ func smoke() -> void:
 	g.guns.give_gun("rh", "pistol")
 	g.player.interact("R")
 	var full_refused: bool = g.items.size() == 1
+	var cdrops := 0
+	for i in 200:
+		g.items.clear()
+		var cp := {type = "pot", broken = false, m = null, x = 0.0, z = 0.0, corr = true}
+		g.props.append(cp)
+		g.world.break_prop(cp)
+		cdrops += g.items.size()
+	g.items.clear()
+	var hid := {type = "pot", broken = false, m = null, x = 0.0, z = 0.0, corr = true, drop = "ammo"}
+	g.props.append(hid)
+	g.world.break_prop(hid)
+	print("corridor breakables: %d drops from 200 plain ones (0), hidden drop comes out %s" % [cdrops, g.items.size() == 1 and g.items[0].kind == "ammo"])
+	g.items.clear()
 	print("breakable stops an enemy shot: %s; ammo: pistol spare 10 -> %d (+20), refused when full %s" % [cover, res_after, full_refused])
 	g.items.clear()
 	var it := g.add_item({kind = "key"}, g.P.x, g.P.z)

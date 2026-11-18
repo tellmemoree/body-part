@@ -168,11 +168,15 @@ Status key: `[x]` done · `[~]` in progress · `[ ]` not started
   - [x] Corridors are breaks: random length (6 to about 30; `CORRIDOR_MIN`, `CORRIDOR_MAX`,
         `CORRIDOR_LONG`), the doorway anywhere along the wall. Start and surgeon rooms a bit bigger
         (32 x 20, 32 x 22) so corridors next to them stay short
-  - [x] Breakables: corridors are filled with pots, barrels and small crates (two lanes, a spot every
-        1.3, three in four taken), rooms get clusters of 3-7 along their walls (about 20 per room).
-        Any hit, any shot (enemy shots too, so they are cover) or walking into one breaks it; 7% drop
-        something: ammo 4%, heart 1.5%, finger 1.5% (`PROP_DROP`). New ammo pickup: each held gun
-        gets a quarter of its total ammo as spare (`AMMO_REFILL`)
+  - [x] Breakables: corridors are filled with pots, barrels and small crates, scattered over the whole
+        width (about 1.1 per unit of length, `PROP_DENSITY`); rooms get clusters of 3-7 along their
+        walls (about 20 per room). Any hit, any shot (enemy shots too, so they are cover) or walking
+        into one breaks it
+  - [x] Drops: corridors hold 1-2 drops per floor, up to 4 (`CORRIDOR_DROPS`: 1 40%, 2 40%, 3 12%,
+        4 8%), hidden in random corridor breakables; every other corridor breakable drops nothing.
+        Room breakables drop 7% of the time (`PROP_DROP`). A drop is ammo, a heart or a finger, 4 :
+        1.5 : 1.5. New ammo pickup: each held gun gets a quarter of its total ammo as spare
+        (`AMMO_REFILL`)
   - [ ] The body panel (top right) now covers enemies more often in big rooms; consider shrinking
         it or fading it while enemies are under it
   - [x] Step 3: loot of the rooms next to yours is loaded (items, chests, spikes, altar, stairs) so you

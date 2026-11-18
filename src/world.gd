@@ -208,17 +208,54 @@ func clear_door_lanes(r: Dictionary) -> void:
 			keep.append(b)
 	r.blocks = keep
 
-# Fills a corridor with breakables (world coordinates): a spot every PROP_STEP along two lanes,
-# each filled with chance PROP_FILL, leaving the two ends clear.
+# Fills a corridor with breakables (world coordinates), scattered over its whole width, middle included,
+# about PROP_DENSITY per unit of length, leaving the two ends clear.
 func fill_corridor(c: Dictionary) -> void:
-	var along: float = c.s0 + 1.6
-	while along < c.s1 - 1.6:
-		for lane in [-0.9, 0.9]:
-			if randf() < D.PROP_FILL:
-				var a := along + randf_range(-0.2, 0.2)
-				var across: float = c.w + lane + randf_range(-0.15, 0.15)
-				c.props.append(_prop(a if c.ew else across, across if c.ew else a))
-		along += D.PROP_STEP
+	var a0: float = c.s0 + 1.6
+	var a1: float = c.s1 - 1.6
+	if a1 <= a0:
+		return
+	var placed := []
+	var half := D.DOOR_W / 2 - 0.55
+	for t in roundi((a1 - a0) * D.PROP_DENSITY * 3):
+		if placed.size() >= roundi((a1 - a0) * D.PROP_DENSITY):
+			break
+		var q := Vector2(randf_range(a0, a1), c.w + randf_range(-half, half))  # (along, across)
+		if placed.any(func(o): return o.distance_to(q) < 0.95):
+			continue
+		placed.append(q)
+		var p := _prop(q.x if c.ew else q.y, q.y if c.ew else q.x)
+		p.corr = true
+		c.props.append(p)
+
+# Hides the floor's corridor drops (CORRIDOR_DROPS: 1-2, up to 4) in random corridor breakables.
+func hide_corridor_drops() -> void:
+	var all := []
+	for c in g.corridors:
+		all.append_array(c.props)
+	all.shuffle()
+	var roll := randf()
+	var n := 1
+	for cd in D.CORRIDOR_DROPS:
+		n = cd[0]
+		if roll < cd[1]:
+			break
+		roll -= cd[1]
+	for i in mini(n, all.size()):
+		all[i].drop = _roll_drop(true)
+
+# What a drop is: ammo, heart or finger, at PROP_DROP's odds. sure = always something; otherwise
+# "" (nothing) is likely, at the chances PROP_DROP gives.
+func _roll_drop(sure: bool) -> String:
+	var total := 0.0
+	for dr in D.PROP_DROP:
+		total += dr[1]
+	var roll := randf() * (total if sure else 1.0)
+	for dr in D.PROP_DROP:
+		if roll < dr[1]:
+			return dr[0]
+		roll -= dr[1]
+	return ""
 
 func _prop(wx: float, wz: float) -> Dictionary:
 	return {type = D.PROPS.keys().pick_random(), broken = false, m = null, wx = wx, wz = wz}
@@ -283,6 +320,7 @@ func build_floor() -> void:
 	for c in g.corridors:
 		fill_corridor(c)
 		build_corridor(c)
+	hide_corridor_drops()
 	g.view.near_g = null  # it was freed with the rest of the floor
 
 func build_room_geo(r: Dictionary) -> void:
@@ -579,7 +617,7 @@ func load_corridors(r: Dictionary) -> void:
 				keep.append(i)
 		nb.items = keep
 
-# Smashes a breakable: a puff of splinters and, sometimes, a small drop (PROP_DROP).
+# Smashes a breakable: a puff of splinters and, sometimes, a small drop (see PROP_DROP, CORRIDOR_DROPS).
 func break_prop(p: Dictionary) -> void:
 	if p.broken:
 		return
@@ -588,12 +626,10 @@ func break_prop(p: Dictionary) -> void:
 		p.m.queue_free()
 		p.m = null
 	g.fx.append({k = "ring", x = p.x, z = p.z, r = 0.9, t = 0.2, life = 0.2, c = Color(D.PROPS[p.type])})
-	var roll := randf()
-	for dr in D.PROP_DROP:
-		if roll < dr[1]:
-			g.add_item({kind = dr[0]}, p.x, p.z)
-			break
-		roll -= dr[1]
+	# corridor breakables only give the floor's hidden drops; room ones roll PROP_DROP
+	var drop: String = p.get("drop", "") if p.get("corr", false) else _roll_drop(false)
+	if drop != "":
+		g.add_item({kind = drop}, p.x, p.z)
 	g.props = g.props.filter(func(o): return not o.broken)
 
 # Whether a world position lies in corridor c (between its two wall lines, within its width).
